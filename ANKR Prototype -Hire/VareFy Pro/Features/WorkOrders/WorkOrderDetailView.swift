@@ -140,10 +140,12 @@ struct WorkOrderDetailView: View {
                     ResponseDeadlineBanner(deadline: deadline)
                 }
                 if proHasChatted {
-                    NavigationLink(value: NavRoute.confirmation(orderId)) {
+                    Button {
+                        Haptics.medium()
+                        Task { await workOrderVM.confirmJob(for: orderId) }
+                    } label: {
                         primaryActionLabel("Confirm Job", icon: "checkmark.circle.fill")
                     }
-                    .buttonStyle(.highlightRow)
                 } else {
                     chatFirstGate
                 }

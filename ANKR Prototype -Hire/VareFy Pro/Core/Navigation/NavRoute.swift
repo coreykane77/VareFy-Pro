@@ -4,7 +4,6 @@ enum NavRoute: Hashable {
     case messagesList
     case workOrdersList
     case workOrderDetail(UUID)
-    case confirmation(UUID)
     case drive(UUID)
     case preWork(UUID)
     case activeBilling(UUID)

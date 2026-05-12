@@ -28,8 +28,6 @@ struct HireHomeView: View {
                     WorkOrdersListView()
                 case .workOrderDetail(let id):
                     WorkOrderDetailView(orderId: id)
-                case .confirmation(let id):
-                    HireConfirmationView(orderId: id)
                 case .drive(let id):
                     DriveView(orderId: id)
                 case .preWork(let id):
