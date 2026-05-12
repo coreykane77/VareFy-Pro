@@ -1,19 +1,36 @@
 import SwiftUI
 
-enum WorkOrderStatus: String, CaseIterable, Equatable {
-    case pending         = "Pending"
-    case readyToNavigate = "Ready"
-    case enRoute         = "En Route"
-    case arrived         = "Arrived"
-    case preWork         = "Pre Work"
-    case activeBilling   = "Active"
-    case paused          = "Paused"
-    case postWork        = "Post Work"
-    case clientReview    = "Review"
+enum WorkOrderStatus: String, CaseIterable, Equatable, Codable {
+    case pending         = "pending"
+    case readyToNavigate = "ready_to_navigate"
+    case enRoute         = "en_route"
+    case arrived         = "arrived"
+    case preWork         = "pre_work"
+    case activeBilling   = "active_billing"
+    case paused          = "paused"
+    case postWork        = "post_work"
+    case clientReview    = "client_review"
+    case completed       = "completed"
+    case disputed        = "disputed"
+    case cancelled       = "cancelled"
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .pending:          return "Pending"
+        case .readyToNavigate:  return "Ready"
+        case .enRoute:          return "En Route"
+        case .arrived:          return "Arrived"
+        case .preWork:          return "Pre Work"
+        case .activeBilling:    return "Active"
+        case .paused:           return "Paused"
+        case .postWork:         return "Post Work"
+        case .clientReview:     return "Review"
+        case .completed:        return "Completed"
+        case .disputed:         return "Disputed"
+        case .cancelled:        return "Cancelled"
+        }
+    }
 
-    /// Lower number = higher in the list
     var sortPriority: Int {
         switch self {
         case .activeBilling:    return 0
@@ -25,6 +42,9 @@ enum WorkOrderStatus: String, CaseIterable, Equatable {
         case .readyToNavigate:  return 6
         case .pending:          return 7
         case .clientReview:     return 8
+        case .completed:        return 9
+        case .disputed:         return 10
+        case .cancelled:        return 11
         }
     }
 
@@ -39,6 +59,9 @@ enum WorkOrderStatus: String, CaseIterable, Equatable {
         case .paused:           return "pause.fill"
         case .postWork:         return "camera.fill"
         case .clientReview:     return "checkmark.circle.fill"
+        case .completed:        return "checkmark.seal.fill"
+        case .disputed:         return "exclamationmark.triangle.fill"
+        case .cancelled:        return "xmark.circle.fill"
         }
     }
 
@@ -53,6 +76,9 @@ enum WorkOrderStatus: String, CaseIterable, Equatable {
         case .paused:           return .orange
         case .postWork:         return .yellow
         case .clientReview:     return .green
+        case .completed:        return .gray
+        case .disputed:         return .red
+        case .cancelled:        return .gray
         }
     }
 }

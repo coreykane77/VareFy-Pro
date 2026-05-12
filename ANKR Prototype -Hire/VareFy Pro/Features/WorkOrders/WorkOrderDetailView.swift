@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct WorkOrderDetailView: View {
     let orderId: UUID
@@ -6,6 +7,7 @@ struct WorkOrderDetailView: View {
     @Environment(WalletViewModel.self) private var walletVM
     @State private var showMaterialsSheet = false
     @State private var showReportIssue = false
+    @State private var proHasChatted: Bool = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
 
@@ -31,6 +33,12 @@ struct WorkOrderDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
         .closeButton()
+        .onAppear {
+            guard order?.status == .pending else { return }
+            Task {
+                proHasChatted = await ChatViewModel.currentUserHasSentMessage(inChannelFor: orderId)
+            }
+        }
         .sheet(isPresented: $showReportIssue) {
             ReportIssueSheet(orderId: orderId)
                 .environment(workOrderVM)
@@ -128,11 +136,17 @@ struct WorkOrderDetailView: View {
             // Primary flow navigation
             switch order.status {
             case .pending:
-                // Confirming/scheduling is always allowed
-                NavigationLink(value: NavRoute.confirmation(orderId)) {
-                    primaryActionLabel("Confirm Job", icon: "checkmark.circle.fill")
+                if let deadline = order.responseDeadline {
+                    ResponseDeadlineBanner(deadline: deadline)
                 }
-                .buttonStyle(.highlightRow)
+                if proHasChatted {
+                    NavigationLink(value: NavRoute.confirmation(orderId)) {
+                        primaryActionLabel("Confirm Job", icon: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.highlightRow)
+                } else {
+                    chatFirstGate
+                }
 
             case .readyToNavigate:
                 if anotherJobIsActive {
@@ -179,6 +193,12 @@ struct WorkOrderDetailView: View {
             case .clientReview:
                 NavigationLink(value: NavRoute.summary(orderId)) {
                     primaryActionLabel("Work Order Summary", icon: "doc.text.fill")
+                }
+                .buttonStyle(.highlightRow)
+
+            case .completed, .disputed, .cancelled:
+                NavigationLink(value: NavRoute.summary(orderId)) {
+                    primaryActionLabel("View Summary", icon: "doc.text.fill")
                 }
                 .buttonStyle(.highlightRow)
             }
@@ -292,6 +312,43 @@ struct WorkOrderDetailView: View {
         }
     }
 
+    private var chatFirstGate: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "message.fill")
+                    .foregroundStyle(Color.varefyProCyan)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Say hello first")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("Send the client a message before confirming.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(14)
+            .background(Color.varefyProCyan.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.varefyProCyan.opacity(0.25), lineWidth: 1)
+            )
+
+            HStack {
+                Image(systemName: "checkmark.circle.fill")
+                Text("Confirm Job")
+                    .fontWeight(.bold)
+            }
+            .font(.headline)
+            .foregroundStyle(.black.opacity(0.35))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color.varefyProCyan.opacity(0.25))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
     private var errorState: some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -300,5 +357,64 @@ struct WorkOrderDetailView: View {
             Text("Work order data unavailable.")
                 .foregroundStyle(.primary)
         }
+    }
+}
+
+// MARK: - Response Deadline Banner
+
+private struct ResponseDeadlineBanner: View {
+    let deadline: Date
+    @State private var timeRemaining: TimeInterval = 0
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.badge.exclamationmark.fill")
+                .font(.title3)
+                .foregroundStyle(urgencyColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Response window")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(formattedTime)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(urgencyColor)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(urgencyColor.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(urgencyColor.opacity(0.25), lineWidth: 1)
+        )
+        .onAppear { updateTime() }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            updateTime()
+        }
+    }
+
+    private func updateTime() {
+        timeRemaining = max(deadline.timeIntervalSinceNow, 0)
+    }
+
+    private var isExpired: Bool { timeRemaining <= 0 }
+
+    private var urgencyColor: Color {
+        if isExpired { return .red }
+        if timeRemaining < 1800 { return .orange }
+        return Color.varefyProCyan
+    }
+
+    private var formattedTime: String {
+        if isExpired { return "Expired — flagged for admin review" }
+        let h = Int(timeRemaining) / 3600
+        let m = (Int(timeRemaining) % 3600) / 60
+        let s = Int(timeRemaining) % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d to respond", h, m, s)
+        }
+        return String(format: "%d:%02d to respond", m, s)
     }
 }

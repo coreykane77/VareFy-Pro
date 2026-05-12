@@ -1,11 +1,84 @@
 import Foundation
 import UIKit
 import Observation
+import Supabase
+
+// Matches public.work_orders columns exactly for Supabase decoding.
+// Dates decoded as String because functions.invoke uses a plain JSONDecoder
+// (no custom dateDecodingStrategy), while .execute().value uses the SDK's ISO 8601 decoder.
+// Keeping both fields as String makes decoding work identically across both call paths.
+private struct SupabaseWorkOrder: Decodable {
+    let id: UUID
+    let client_id: UUID
+    let pro_id: UUID?
+    let status: WorkOrderStatus
+    let service_title: String
+    let address: String
+    let latitude: Double?
+    let longitude: Double?
+    let hourly_rate: Double
+    let client_notes: String?
+    let scheduled_at: String
+    let radius_expanded: Bool
+    let paused_return_status: WorkOrderStatus?
+    let response_deadline: String?
+    let billing_start_at: String?
+    let elapsed_billing_seconds: Double
+    let labor_total: Double
+    let materials_total: Double
+    let total_paid: Double
+    let payout_status: String
+
+    func toWorkOrder(clientName: String = "Client") -> WorkOrder {
+        WorkOrder(
+            id: id,
+            clientId: client_id,
+            clientName: clientName,
+            clientInitials: String(clientName.prefix(2)).uppercased(),
+            serviceTitle: service_title,
+            address: address,
+            scheduledTime: Self.parseDate(scheduled_at) ?? Date(),
+            status: status,
+            clientNotes: client_notes ?? "",
+            serviceId: "",
+            hourlyRate: hourly_rate,
+            materialItems: [],
+            timelineEvents: [],
+            prePhotoRecords: [],
+            postPhotoRecords: [],
+            billingStartTime: Self.parseDate(billing_start_at),
+            elapsedBillingSeconds: elapsed_billing_seconds,
+            radiusExpanded: radius_expanded,
+            pausedReturnStatus: paused_return_status,
+            responseDeadline: Self.parseDate(response_deadline)
+        )
+    }
+
+    private static let isoFull: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoBasic = ISO8601DateFormatter()
+
+    private static func parseDate(_ s: String?) -> Date? {
+        guard let s else { return nil }
+        return isoFull.date(from: s) ?? isoBasic.date(from: s)
+    }
+}
+
+// Decoded response from the transition-work-order Edge Function
+private struct TransitionResponse: Decodable {
+    let success: Bool?
+    let error: String?
+    let order: SupabaseWorkOrder?
+}
 
 @Observable
 class WorkOrderViewModel {
 
-    var workOrders: [WorkOrder] = PreviewData.workOrders
+    var workOrders: [WorkOrder] = []
+    var isLoading: Bool = false
     var isOnline: Bool = false
     var isInsideRadius: Bool = true
     var radiusCountdownSeconds: Int = 0
@@ -16,29 +89,58 @@ class WorkOrderViewModel {
 
     private var billingTask: Task<Void, Never>?
     private var radiusTask: Task<Void, Never>?
+    private var realtimeChannel: RealtimeChannelV2?
 
-    // Wall-clock billing state (lives in memory + UserDefaults for persistence)
+    // Wall-clock billing anchors (server timestamp drives accuracy)
     private var billingWallClockStart: Date? = nil
     private var billingBaseSeconds: Double = 0
 
-    // MARK: - UserDefaults keys
-    private enum UDKey {
-        static let orderId      = "vfy_billing_order_id"
-        static let wallStart    = "vfy_billing_wall_start"   // TimeInterval
-        static let accumulated  = "vfy_billing_accumulated"  // Double seconds
+    // MARK: - Supabase Fetch
+
+    func fetchWorkOrders(proId: UUID) async {
+        isLoading = true
+        do {
+            let rows: [SupabaseWorkOrder] = try await supabase
+                .from("work_orders")
+                .select()
+                .eq("pro_id", value: proId)
+                .order("scheduled_at")
+                .execute()
+                .value
+            workOrders = rows.map { $0.toWorkOrder() }
+
+            // Restart billing display timer for any order already in active_billing
+            if let active = workOrders.first(where: { $0.status == .activeBilling && $0.billingStartTime != nil }) {
+                startBillingTimer(for: active.id)
+            }
+        } catch {
+            print("WorkOrderViewModel: fetch failed — \(error)")
+        }
+        isLoading = false
     }
 
-    init() {
-        restoreBillingStateIfNeeded()
+    func subscribeToWorkOrders(proId: UUID) async {
+        let channel = supabase.realtimeV2.channel("pro-orders-\(proId)")
+        let changes = channel.postgresChange(
+            AnyAction.self,
+            schema: "public",
+            table: "work_orders",
+            filter: "pro_id=eq.\(proId)"
+        )
+        try? await channel.subscribeWithError()
+        realtimeChannel = channel
+        for await _ in changes {
+            await fetchWorkOrders(proId: proId)
+        }
     }
 
-    func markChatRead(for id: UUID) {
-        unreadChatOrderIds.remove(id)
+    func unsubscribe() async {
+        await realtimeChannel?.unsubscribe()
+        realtimeChannel = nil
     }
 
-    func markChatUnread(for id: UUID) {
-        unreadChatOrderIds.insert(id)
-    }
+    func markChatRead(for id: UUID) { unreadChatOrderIds.remove(id) }
+    func markChatUnread(for id: UUID) { unreadChatOrderIds.insert(id) }
 
     // MARK: - Helpers
 
@@ -50,7 +152,6 @@ class WorkOrderViewModel {
         workOrders.first { $0.id == id }
     }
 
-    /// The ID of any order currently in an active work state (billing, paused, or post-work).
     var activeOrderId: UUID? {
         workOrders.first {
             $0.status == .activeBilling || $0.status == .paused || $0.status == .postWork
@@ -59,142 +160,283 @@ class WorkOrderViewModel {
 
     // MARK: - Confirmation
 
-    func confirmJob(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .pending else { return }
-        workOrders[i].addTimelineEvent(.confirmed)
+    func confirmJob(for id: UUID) async {
+        guard let i = index(of: id), workOrders[i].status == .pending else { return }
         workOrders[i].status = .readyToNavigate
+        workOrders[i].addTimelineEvent(.confirmed)
+        await transition(id: id, to: "ready_to_navigate")
     }
 
     // MARK: - Drive
 
-    func startDrive(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .readyToNavigate else { return }
+    func startDrive(for id: UUID) async {
+        guard let i = index(of: id), workOrders[i].status == .readyToNavigate else { return }
         workOrders[i].status = .enRoute
         isOnline = true
+        await transition(id: id, to: "en_route")
     }
 
-    func simulateArrival(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .enRoute else { return }
+    func simulateArrival(for id: UUID) async {
+        guard let i = index(of: id), workOrders[i].status == .enRoute else { return }
         workOrders[i].addTimelineEvent(.arrived)
-        workOrders[i].status = .arrived
-        workOrders[i].status = .preWork
+        workOrders[i].status = .preWork  // skip brief .arrived flash — server returns pre_work
+        await transition(id: id, to: "arrived")
     }
 
     // MARK: - Pre Work
 
-    func expandRadius(for id: UUID) {
+    func expandRadius(for id: UUID) async {
         guard let i = index(of: id),
-              workOrders[i].status == .preWork,
               !workOrders[i].radiusExpanded else { return }
         workOrders[i].radiusExpanded = true
         workOrders[i].addTimelineEvent(.radiusExpanded)
+        // Persist flag to Supabase directly (not a status transition)
+        do {
+            try await supabase
+                .from("work_orders")
+                .update(["radius_expanded": true])
+                .eq("id", value: id.uuidString)
+                .execute()
+        } catch {
+            print("WorkOrderViewModel: expandRadius failed — \(error)")
+        }
     }
 
-    func addPrePhoto(_ photo: UIImage, for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].prePhotos.count < Constants.maxPhotosPerGate else { return }
-        workOrders[i].prePhotos.append(photo)
+    func fetchPhotos(for id: UUID) async {
+        do {
+            async let pre = PhotoService.fetchPhotos(workOrderId: id, photoType: "pre")
+            async let post = PhotoService.fetchPhotos(workOrderId: id, photoType: "post")
+            let (preRecords, postRecords) = try await (pre, post)
+            if let i = index(of: id) {
+                workOrders[i].prePhotoRecords = preRecords
+                workOrders[i].postPhotoRecords = postRecords
+            }
+        } catch {
+            print("WorkOrderViewModel: fetchPhotos failed — \(error)")
+        }
     }
 
-    func removePrePhoto(at photoIndex: Int, for id: UUID) {
+    func addPrePhoto(_ image: UIImage, for id: UUID, uploadedBy: UUID) async {
         guard let i = index(of: id),
-              photoIndex < workOrders[i].prePhotos.count else { return }
-        workOrders[i].prePhotos.remove(at: photoIndex)
+              workOrders[i].prePhotoRecords.count < Constants.maxPhotosPerGate else { return }
+        let tempId = UUID()
+        workOrders[i].prePhotoRecords.append(
+            PhotoRecord(id: tempId, storagePath: "", localImage: image, isUploading: true)
+        )
+        do {
+            let record = try await PhotoService.uploadPhoto(image, photoType: "pre", workOrderId: id, uploadedBy: uploadedBy)
+            if let j = index(of: id), let k = workOrders[j].prePhotoRecords.firstIndex(where: { $0.id == tempId }) {
+                workOrders[j].prePhotoRecords[k] = record
+            }
+        } catch {
+            if let j = index(of: id), let k = workOrders[j].prePhotoRecords.firstIndex(where: { $0.id == tempId }) {
+                workOrders[j].prePhotoRecords.remove(at: k)
+            }
+            print("WorkOrderViewModel: pre photo upload failed — \(error)")
+        }
+    }
+
+    func removePrePhoto(record: PhotoRecord, for id: UUID) async {
+        guard let i = index(of: id),
+              let k = workOrders[i].prePhotoRecords.firstIndex(where: { $0.id == record.id }) else { return }
+        workOrders[i].prePhotoRecords.remove(at: k)
+        guard !record.storagePath.isEmpty else { return }
+        do {
+            try await PhotoService.deletePhoto(record: record)
+        } catch {
+            print("WorkOrderViewModel: pre photo delete failed — \(error)")
+        }
     }
 
     func canStartWork(for id: UUID) -> Bool {
         guard let order = order(id: id) else { return false }
-        return order.prePhotoCount >= Constants.minPhotosRequired
+        return order.confirmedPrePhotoCount >= Constants.minPhotosRequired
     }
 
     // MARK: - Billing
 
-    func startWork(for id: UUID, walletVM: WalletViewModel) {
+    func startWork(for id: UUID, walletVM: WalletViewModel) async {
         guard let i = index(of: id),
               canStartWork(for: id),
               workOrders[i].status == .preWork else { return }
-        workOrders[i].billingStartTime = Date()
         workOrders[i].addTimelineEvent(.started)
         workOrders[i].status = .activeBilling
-        startBillingTimer(for: id)
+        await transition(id: id, to: "active_billing")
+        // After server response, billingStartTime is populated — start display timer
+        if let j = index(of: id) {
+            startBillingTimer(for: workOrders[j].id)
+        }
     }
 
-    func pauseWork(for id: UUID) {
+    func pauseWork(for id: UUID) async {
         guard let i = index(of: id),
               workOrders[i].status == .activeBilling || workOrders[i].status == .preWork else { return }
-        workOrders[i].pausedReturnStatus = workOrders[i].status
+        let prevStatus = workOrders[i].status
+        workOrders[i].pausedReturnStatus = prevStatus
         workOrders[i].addTimelineEvent(.paused)
         workOrders[i].status = .paused
-        stopBillingTimer(clearPersistence: true)
+        stopBillingTimer()
         cancelRadiusCountdown()
+        await transition(id: id, to: "paused")
     }
 
-    func autoPause(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .activeBilling else { return }
+    func autoPause(for id: UUID) async {
+        guard let i = index(of: id) else { return }
+        guard workOrders[i].status == .activeBilling else { return }
         workOrders[i].pausedReturnStatus = .activeBilling
         workOrders[i].addTimelineEvent(.autoPause)
         workOrders[i].status = .paused
-        stopBillingTimer(clearPersistence: true)
-        cancelRadiusCountdown()
+        stopBillingTimer()
+        // Nil out the reference without cancelling — we ARE the radiusTask.
+        // Calling cancelRadiusCountdown() here would cancel ourselves and kill
+        // the upcoming network call with NSURLErrorCancelled.
+        radiusTask = nil
+        radiusCountdownSeconds = 0
+        await transition(id: id, to: "paused", trigger: "auto_pause")
     }
 
-    func resumeWork(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .paused else { return }
+    func resumeWork(for id: UUID) async {
+        guard let i = index(of: id), workOrders[i].status == .paused else { return }
         let returnTo = workOrders[i].pausedReturnStatus ?? .activeBilling
         workOrders[i].addTimelineEvent(.resumed)
         workOrders[i].status = returnTo
         workOrders[i].pausedReturnStatus = nil
-        if returnTo == .activeBilling {
-            startBillingTimer(for: id)
+        await transition(id: id, to: returnTo.rawValue)
+        if returnTo == .activeBilling, let j = index(of: id) {
+            startBillingTimer(for: workOrders[j].id)
         }
+    }
+
+    // MARK: - Estimates
+
+    func createEstimate(
+        for orderId: UUID,
+        estimatedHours: Double,
+        estimatedMaterials: Double,
+        proposedStartDate: Date,
+        materialsDepositEnabled: Bool,
+        materialsDepositAmount: Double
+    ) async throws {
+        struct Body: Encodable {
+            let work_order_id: String
+            let estimated_hours: Double
+            let estimated_materials: Double
+            let proposed_start_date: String
+            let materials_deposit_enabled: Bool
+            let materials_deposit_amount: Double
+        }
+        struct CreateEstimateResponse: Decodable {
+            let success: Bool
+            let error: String?
+        }
+
+        let iso = ISO8601DateFormatter()
+        let response: CreateEstimateResponse = try await supabase.functions
+            .invoke("create-estimate", options: FunctionInvokeOptions(
+                body: Body(
+                    work_order_id: orderId.uuidString,
+                    estimated_hours: estimatedHours,
+                    estimated_materials: estimatedMaterials,
+                    proposed_start_date: iso.string(from: proposedStartDate),
+                    materials_deposit_enabled: materialsDepositEnabled,
+                    materials_deposit_amount: materialsDepositAmount
+                )
+            ))
+        if let errMsg = response.error {
+            throw NSError(domain: "VareFy", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: errMsg])
+        }
+    }
+
+    // MARK: - Materials (local until Phase 7 photo upload)
+
+    func addMaterialItem(description: String, amount: Double, for id: UUID) {
+        guard let i = index(of: id) else { return }
+        workOrders[i].materialItems.append(MaterialLineItem(description: description, amount: amount))
+    }
+
+    func removeMaterialItem(at itemIndex: Int, for id: UUID) {
+        guard let i = index(of: id),
+              itemIndex < workOrders[i].materialItems.count else { return }
+        workOrders[i].materialItems.remove(at: itemIndex)
+    }
+
+    func setReceiptPhoto(_ photo: UIImage, for materialId: UUID, orderId: UUID) {
+        guard let i = index(of: orderId),
+              let j = workOrders[i].materialItems.firstIndex(where: { $0.id == materialId }) else { return }
+        workOrders[i].materialItems[j].receiptPhoto = photo
     }
 
     // MARK: - Post Work
 
-    func moveToPostWork(for id: UUID) {
-        guard let i = index(of: id),
-              workOrders[i].status == .activeBilling else { return }
-        stopBillingTimer(clearPersistence: true)
-        cancelRadiusCountdown()
+    func moveToPostWork(for id: UUID) async {
+        guard let i = index(of: id), workOrders[i].status == .activeBilling else { return }
         workOrders[i].status = .postWork
+        stopBillingTimer()
+        cancelRadiusCountdown()
+        await transition(id: id, to: "post_work")
     }
 
-    func addPostPhoto(_ photo: UIImage, for id: UUID) {
+    func addPostPhoto(_ image: UIImage, for id: UUID, uploadedBy: UUID) async {
         guard let i = index(of: id),
-              workOrders[i].postPhotos.count < Constants.maxPhotosPerGate else { return }
-        workOrders[i].postPhotos.append(photo)
+              workOrders[i].postPhotoRecords.count < Constants.maxPhotosPerGate else { return }
+        let tempId = UUID()
+        workOrders[i].postPhotoRecords.append(
+            PhotoRecord(id: tempId, storagePath: "", localImage: image, isUploading: true)
+        )
+        do {
+            let record = try await PhotoService.uploadPhoto(image, photoType: "post", workOrderId: id, uploadedBy: uploadedBy)
+            if let j = index(of: id), let k = workOrders[j].postPhotoRecords.firstIndex(where: { $0.id == tempId }) {
+                workOrders[j].postPhotoRecords[k] = record
+            }
+        } catch {
+            if let j = index(of: id), let k = workOrders[j].postPhotoRecords.firstIndex(where: { $0.id == tempId }) {
+                workOrders[j].postPhotoRecords.remove(at: k)
+            }
+            print("WorkOrderViewModel: post photo upload failed — \(error)")
+        }
     }
 
-    func removePostPhoto(at photoIndex: Int, for id: UUID) {
+    func removePostPhoto(record: PhotoRecord, for id: UUID) async {
         guard let i = index(of: id),
-              photoIndex < workOrders[i].postPhotos.count else { return }
-        workOrders[i].postPhotos.remove(at: photoIndex)
+              let k = workOrders[i].postPhotoRecords.firstIndex(where: { $0.id == record.id }) else { return }
+        workOrders[i].postPhotoRecords.remove(at: k)
+        guard !record.storagePath.isEmpty else { return }
+        do {
+            try await PhotoService.deletePhoto(record: record)
+        } catch {
+            print("WorkOrderViewModel: post photo delete failed — \(error)")
+        }
     }
 
     func canComplete(for id: UUID) -> Bool {
         guard let order = order(id: id) else { return false }
-        return order.postPhotoCount >= Constants.minPhotosRequired
+        return order.confirmedPostPhotoCount >= Constants.minPhotosRequired
     }
 
-    func completeWork(for id: UUID, walletVM: WalletViewModel) {
+    func completeWork(for id: UUID, walletVM: WalletViewModel) async {
         guard let i = index(of: id),
               canComplete(for: id),
               workOrders[i].status == .postWork else { return }
         workOrders[i].addTimelineEvent(.completed)
         workOrders[i].status = .clientReview
-        walletVM.creditBalance(workOrders[i].totalPaid, description: workOrders[i].serviceTitle)
+        await transition(id: id, to: "client_review")
+        // Temporary wallet credit until Phase 10 wires real Supabase transactions
+        if let j = index(of: id) {
+            walletVM.creditBalance(workOrders[j].totalPaid, description: workOrders[j].serviceTitle)
+        }
     }
 
     // MARK: - Radius
 
-    func setInsideRadius() {
+    func setInsideRadius(for id: UUID? = nil) {
         isInsideRadius = true
         cancelRadiusCountdown()
+        if let id = id,
+           let order = order(id: id),
+           order.status == .paused {
+            Task { await resumeWork(for: id) }
+        }
     }
 
     func setOutsideRadius(for id: UUID) {
@@ -203,20 +445,15 @@ class WorkOrderViewModel {
         startRadiusCountdown(for: id)
     }
 
-    // MARK: - Billing Timer (wall-clock based for persistence)
+    // MARK: - Billing Timer (server-anchored display timer)
 
     private func startBillingTimer(for id: UUID) {
-        stopBillingTimer(clearPersistence: false)
+        stopBillingTimer()
         guard let i = index(of: id) else { return }
 
-        // Base = whatever elapsed time we already have (from restored or prior sessions)
         billingBaseSeconds = workOrders[i].elapsedBillingSeconds
-        billingWallClockStart = Date()
-
-        // Persist so we can restore on app relaunch
-        UserDefaults.standard.set(id.uuidString, forKey: UDKey.orderId)
-        UserDefaults.standard.set(Date().timeIntervalSinceReferenceDate, forKey: UDKey.wallStart)
-        UserDefaults.standard.set(billingBaseSeconds, forKey: UDKey.accumulated)
+        // Use server billing_start_at as the anchor — corrects for network latency drift
+        billingWallClockStart = workOrders[i].billingStartTime ?? Date()
 
         billingTask = Task { @MainActor in
             while !Task.isCancelled {
@@ -231,36 +468,10 @@ class WorkOrderViewModel {
         }
     }
 
-    private func stopBillingTimer(clearPersistence: Bool) {
+    private func stopBillingTimer() {
         billingTask?.cancel()
         billingTask = nil
         billingWallClockStart = nil
-        if clearPersistence {
-            UserDefaults.standard.removeObject(forKey: UDKey.orderId)
-            UserDefaults.standard.removeObject(forKey: UDKey.wallStart)
-            UserDefaults.standard.removeObject(forKey: UDKey.accumulated)
-        }
-    }
-
-    /// On cold launch, check if billing was active and restore elapsed time + restart timer.
-    private func restoreBillingStateIfNeeded() {
-        let ud = UserDefaults.standard
-        guard
-            let idString = ud.string(forKey: UDKey.orderId),
-            let id = UUID(uuidString: idString),
-            let idx = workOrders.firstIndex(where: { $0.id == id })
-        else { return }
-
-        let accumulated = ud.double(forKey: UDKey.accumulated)
-        let wallStartEpoch = ud.double(forKey: UDKey.wallStart)
-        guard wallStartEpoch > 0 else { return } // was paused, don't restore active billing
-
-        let wallStart = Date(timeIntervalSinceReferenceDate: wallStartEpoch)
-        let elapsed = accumulated + Date().timeIntervalSince(wallStart)
-
-        workOrders[idx].elapsedBillingSeconds = elapsed
-        workOrders[idx].status = .activeBilling
-        startBillingTimer(for: id)
     }
 
     // MARK: - Radius Countdown
@@ -275,7 +486,7 @@ class WorkOrderViewModel {
                 radiusCountdownSeconds -= 1
             }
             if !Task.isCancelled && !isInsideRadius {
-                autoPause(for: id)
+                await autoPause(for: id)
             }
         }
     }
@@ -284,5 +495,47 @@ class WorkOrderViewModel {
         radiusTask?.cancel()
         radiusTask = nil
         radiusCountdownSeconds = 0
+    }
+
+    // MARK: - Edge Function: State Transition
+
+    private func transition(id: UUID, to newStatus: String, trigger: String? = nil) async {
+        struct Body: Encodable {
+            let work_order_id: String
+            let new_status: String
+            let trigger: String?
+        }
+
+        do {
+            let response: TransitionResponse = try await supabase.functions
+                .invoke("transition-work-order", options: FunctionInvokeOptions(
+                    body: Body(work_order_id: id.uuidString, new_status: newStatus, trigger: trigger)
+                ))
+
+            if let serverOrder = response.order, let i = index(of: id) {
+                reconcileLocalOrder(from: serverOrder, at: i)
+            } else if let errMsg = response.error {
+                print("WorkOrderViewModel: transition \(newStatus) rejected — \(errMsg)")
+            }
+        } catch {
+            print("WorkOrderViewModel: transition \(newStatus) error — \(error)")
+        }
+    }
+
+    // Merge server state into local order, preserving in-flight photo records and local materials.
+    private func reconcileLocalOrder(from serverOrder: SupabaseWorkOrder, at i: Int) {
+        let prePhotoRecords  = workOrders[i].prePhotoRecords
+        let postPhotoRecords = workOrders[i].postPhotoRecords
+        let materials        = workOrders[i].materialItems
+        let timeline         = workOrders[i].timelineEvents
+        let clientName       = workOrders[i].clientName
+
+        var updated = serverOrder.toWorkOrder(clientName: clientName)
+        updated.prePhotoRecords  = prePhotoRecords
+        updated.postPhotoRecords = postPhotoRecords
+        updated.materialItems    = materials
+        updated.timelineEvents   = timeline
+
+        workOrders[i] = updated
     }
 }

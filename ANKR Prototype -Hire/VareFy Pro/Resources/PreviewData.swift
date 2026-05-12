@@ -32,6 +32,7 @@ enum PreviewData {
     static var workOrders: [WorkOrder] = [
         WorkOrder(
             id: UUID(),
+            clientId: UUID(),
             clientName: "Sarah T.",
             clientInitials: "ST",
             serviceTitle: "General Labor",
@@ -46,8 +47,8 @@ enum PreviewData {
                 MaterialLineItem(description: "Screws & hardware", amount: 17.00),
             ],
             timelineEvents: [],
-            prePhotos: [],
-            postPhotos: [],
+            prePhotoRecords: [],
+            postPhotoRecords: [],
             billingStartTime: nil,
             elapsedBillingSeconds: 0,
             radiusExpanded: false,
@@ -55,6 +56,7 @@ enum PreviewData {
         ),
         WorkOrder(
             id: UUID(),
+            clientId: UUID(),
             clientName: "James O.",
             clientInitials: "JO",
             serviceTitle: "Pressure Washing",
@@ -68,8 +70,8 @@ enum PreviewData {
             timelineEvents: [
                 TimelineEvent(type: .confirmed, timestamp: Date().addingTimeInterval(-1800))
             ],
-            prePhotos: [],
-            postPhotos: [],
+            prePhotoRecords: [],
+            postPhotoRecords: [],
             billingStartTime: nil,
             elapsedBillingSeconds: 0,
             radiusExpanded: false,
@@ -77,6 +79,7 @@ enum PreviewData {
         ),
         WorkOrder(
             id: UUID(),
+            clientId: UUID(),
             clientName: "Linda C.",
             clientInitials: "LC",
             serviceTitle: "Furniture Assembly",
@@ -96,8 +99,8 @@ enum PreviewData {
                 TimelineEvent(type: .started,    timestamp: Date().addingTimeInterval(-6600)),
                 TimelineEvent(type: .completed,  timestamp: Date().addingTimeInterval(-3600))
             ],
-            prePhotos: [],
-            postPhotos: [],
+            prePhotoRecords: [],
+            postPhotoRecords: [],
             billingStartTime: Date().addingTimeInterval(-6600),
             elapsedBillingSeconds: 3000,
             radiusExpanded: false,

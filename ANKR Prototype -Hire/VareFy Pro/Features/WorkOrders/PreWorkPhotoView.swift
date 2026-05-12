@@ -1,21 +1,17 @@
 import SwiftUI
-import UIKit
 
 struct PreWorkPhotoView: View {
     let orderId: UUID
     @Environment(WorkOrderViewModel.self) private var workOrderVM
     @Environment(WalletViewModel.self) private var walletVM
+    @Environment(AuthManager.self) private var authManager
 
     @State private var showImagePicker = false
-    @State private var showCameraAlert = false
     @State private var navigateToBilling = false
     @State private var showReportIssue = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
-
-    private var canStart: Bool {
-        workOrderVM.canStartWork(for: orderId)
-    }
+    private var canStart: Bool { workOrderVM.canStartWork(for: orderId) }
 
     var body: some View {
         ZStack {
@@ -25,24 +21,14 @@ struct PreWorkPhotoView: View {
                 VStack(spacing: 0) {
                     ScrollView {
                         VStack(spacing: 20) {
-                            // Gate status
                             gateStatusBanner(order)
-
-                            // Photo grid
                             photoSection(order)
-
-                            // Large Property Boundary
-                            if !order.radiusExpanded {
-                                largePropertyButton
-                            } else {
-                                radiusExpandedBadge
-                            }
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
+                        .padding(.bottom, 100)
                     }
 
-                    // Bottom actions
                     VStack(spacing: 12) {
                         if !canStart {
                             HStack(spacing: 8) {
@@ -57,16 +43,10 @@ struct PreWorkPhotoView: View {
                             .background(Color.orange.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
-                        PrimaryButton(
-                            title: "Start Work",
-                            isEnabled: canStart
-                        ) {
-                            workOrderVM.startWork(for: orderId, walletVM: walletVM)
+                        PrimaryButton(title: "Start Work", isEnabled: canStart) {
+                            Task { await workOrderVM.startWork(for: orderId, walletVM: walletVM) }
                             navigateToBilling = true
                         }
-
-                        pauseButton(order)
-
                         Button {
                             Haptics.medium()
                             showReportIssue = true
@@ -97,9 +77,9 @@ struct PreWorkPhotoView: View {
         .navigationTitle("Pre Work Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .task { await workOrderVM.fetchPhotos(for: orderId) }
         .sheet(isPresented: $showReportIssue) {
-            ReportIssueSheet(orderId: orderId)
-                .environment(workOrderVM)
+            ReportIssueSheet(orderId: orderId).environment(workOrderVM)
         }
         .closeButton()
         .navigationDestination(isPresented: $navigateToBilling) {
@@ -109,8 +89,8 @@ struct PreWorkPhotoView: View {
             ImagePickerView(selectedImage: Binding(
                 get: { nil },
                 set: { img in
-                    if let img = img {
-                        workOrderVM.addPrePhoto(img, for: orderId)
+                    if let img, let userId = authManager.currentUserId {
+                        Task { await workOrderVM.addPrePhoto(img, for: orderId, uploadedBy: userId) }
                     }
                 }
             ))
@@ -127,7 +107,7 @@ struct PreWorkPhotoView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                Text("\(order.prePhotoCount) of \(Constants.minPhotosRequired) required uploaded")
+                Text("\(order.confirmedPrePhotoCount) of \(Constants.minPhotosRequired) required uploaded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -149,9 +129,9 @@ struct PreWorkPhotoView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(order.prePhotos.enumerated()), id: \.offset) { idx, photo in
-                        photoThumb(photo: photo) {
-                            workOrderVM.removePrePhoto(at: idx, for: orderId)
+                    ForEach(order.prePhotoRecords) { record in
+                        photoThumb(record: record) {
+                            Task { await workOrderVM.removePrePhoto(record: record, for: orderId) }
                         }
                     }
                     if order.prePhotoCount < Constants.maxPhotosPerGate {
@@ -163,23 +143,42 @@ struct PreWorkPhotoView: View {
     }
 
     @ViewBuilder
-    private func photoThumb(photo: UIImage, onDelete: @escaping () -> Void) -> some View {
+    private func photoThumb(record: PhotoRecord, onDelete: @escaping () -> Void) -> some View {
         ZStack(alignment: .topTrailing) {
-            Image(uiImage: photo)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 90, height: 90)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            ZStack {
+                if let image = record.localImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else if let url = record.signedURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.appCard
+                    }
+                } else {
+                    Color.appCard
+                }
 
-            Button(action: {
-                Haptics.light()
-                onDelete()
-            }) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.primary)
-                    .background(Color.black.opacity(0.6))
-                    .clipShape(Circle())
-                    .padding(4)
+                if record.isUploading {
+                    Color.black.opacity(0.45)
+                    ProgressView().tint(.white)
+                }
+            }
+            .frame(width: 90, height: 90)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            if !record.isUploading {
+                Button(action: {
+                    Haptics.light()
+                    onDelete()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.primary)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .padding(4)
+                }
             }
         }
     }
@@ -204,92 +203,6 @@ struct PreWorkPhotoView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(Color.varefyProCyan.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4]))
             )
-        }
-        .simultaneousGesture(TapGesture().onEnded {
-            // Also add sample photo as fallback
-        })
-        .contextMenu {
-            Button("Add Sample Photo") {
-                let sample = PhotoServiceMock.samplePhoto(label: "Pre \(workOrderVM.order(id: orderId)?.prePhotoCount ?? 0 + 1)")
-                workOrderVM.addPrePhoto(sample, for: orderId)
-            }
-        }
-    }
-
-    private var largePropertyButton: some View {
-        Button {
-            Haptics.medium()
-            workOrderVM.expandRadius(for: orderId)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
-                    .foregroundStyle(Color.varefyProCyan)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Large Property Boundary")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    Text("Expand job radius for this work order")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(14)
-            .background(Color.appCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    private var radiusExpandedBadge: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-            Text("Large property radius active")
-                .font(.subheadline)
-                .foregroundStyle(.green)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.green.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    @ViewBuilder
-    private func pauseButton(_ order: WorkOrder) -> some View {
-        if order.status == .preWork || order.status == .paused {
-            if order.status == .paused {
-                Button {
-                    Haptics.medium()
-                    workOrderVM.resumeWork(for: orderId)
-                } label: {
-                    Label("Resume", systemImage: "play.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-            } else {
-                Button {
-                    Haptics.medium()
-                    workOrderVM.pauseWork(for: orderId)
-                } label: {
-                    Label("Pause", systemImage: "pause.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-            }
         }
     }
 }

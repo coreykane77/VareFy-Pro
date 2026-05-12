@@ -19,13 +19,11 @@ class WalletViewModel {
     }
 
     func requestPayout(amount: Double, isInstant: Bool) {
-        let fee = isInstant ? amount * 0.015 : 0.0
-        let net = amount + fee
-        balance -= net
+        balance -= amount
         let tx = Transaction(
             id: UUID(),
             description: isInstant ? "Instant Pay" : "Bank Transfer",
-            amount: -net,
+            amount: -amount,
             date: Date(),
             type: .payout
         )

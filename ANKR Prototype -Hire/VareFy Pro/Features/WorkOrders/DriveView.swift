@@ -23,6 +23,7 @@ struct DriveView: View {
     @State private var showArrivalPopup = false
     @State private var pulseScale: CGFloat = 1.0
     @State private var showReportIssue = false
+    @State private var clientNotified = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
 
@@ -154,7 +155,7 @@ struct DriveView: View {
                     }
 
                     PrimaryButton(title: "Start Drive") {
-                        workOrderVM.startDrive(for: orderId)
+                        Task { await workOrderVM.startDrive(for: orderId) }
                         startSimulation()
                     }
                 }
@@ -225,19 +226,40 @@ struct DriveView: View {
                     .multilineTextAlignment(.center)
             }
 
-            Button {
-                driveTask?.cancel()
-                workOrderVM.simulateArrival(for: orderId)
-                dismiss()
-            } label: {
-                Text("Confirm Arrival")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Color.green)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            if clientNotified {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.title3)
+                    Text("Client notified of your arrival")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color.green.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .transition(.opacity)
+            } else {
+                Button {
+                    driveTask?.cancel()
+                    Task { await workOrderVM.simulateArrival(for: orderId) }
+                    withAnimation { clientNotified = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        dismiss()
+                    }
+                } label: {
+                    Text("Confirm Arrival")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
             }
         }
         .padding(28)

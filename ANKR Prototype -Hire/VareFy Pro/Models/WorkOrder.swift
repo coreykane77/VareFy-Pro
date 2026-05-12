@@ -5,16 +5,28 @@ struct MaterialLineItem: Identifiable {
     let id: UUID
     var description: String
     var amount: Double
+    var receiptPhoto: UIImage?
 
-    init(id: UUID = UUID(), description: String = "", amount: Double = 0) {
+    init(id: UUID = UUID(), description: String = "", amount: Double = 0, receiptPhoto: UIImage? = nil) {
         self.id = id
         self.description = description
         self.amount = amount
+        self.receiptPhoto = receiptPhoto
     }
+}
+
+// Represents a photo that has been uploaded to Supabase Storage (or is in-flight).
+struct PhotoRecord: Identifiable {
+    let id: UUID
+    let storagePath: String     // empty string while upload is in-flight
+    var localImage: UIImage?    // present immediately after capture; nil after session reload
+    var signedURL: URL?         // populated when loaded from Supabase
+    var isUploading: Bool       // true until the storage + DB write completes
 }
 
 struct WorkOrder: Identifiable {
     let id: UUID
+    let clientId: UUID
     var clientName: String
     var clientInitials: String
     var serviceTitle: String
@@ -26,12 +38,13 @@ struct WorkOrder: Identifiable {
     var hourlyRate: Double
     var materialItems: [MaterialLineItem]
     var timelineEvents: [TimelineEvent]
-    var prePhotos: [UIImage]
-    var postPhotos: [UIImage]
+    var prePhotoRecords: [PhotoRecord]
+    var postPhotoRecords: [PhotoRecord]
     var billingStartTime: Date?
     var elapsedBillingSeconds: Double
     var radiusExpanded: Bool
     var pausedReturnStatus: WorkOrderStatus?
+    var responseDeadline: Date?
 
     var laborTotal: Double {
         (elapsedBillingSeconds / 3600.0) * hourlyRate
@@ -45,8 +58,13 @@ struct WorkOrder: Identifiable {
         laborTotal + materialsTotal
     }
 
-    var prePhotoCount: Int { prePhotos.count }
-    var postPhotoCount: Int { postPhotos.count }
+    // Count only confirmed (fully uploaded) photos — used by gate checks.
+    var confirmedPrePhotoCount: Int { prePhotoRecords.filter { !$0.isUploading }.count }
+    var confirmedPostPhotoCount: Int { postPhotoRecords.filter { !$0.isUploading }.count }
+
+    // Total including in-flight — used for the grid display counter.
+    var prePhotoCount: Int { prePhotoRecords.count }
+    var postPhotoCount: Int { postPhotoRecords.count }
 
     mutating func addTimelineEvent(_ type: EventType) {
         timelineEvents.append(TimelineEvent(type: type, timestamp: Date()))

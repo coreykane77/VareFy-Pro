@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VareFy — Client Chat Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/stream-chat@8/dist/browser.full-bundle.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; height: 100vh; padding: 16px; gap: 12px; }
+    h2 { font-size: 15px; color: #aaa; }
+    #status { font-size: 13px; color: #888; }
+    #messages { flex: 1; overflow-y: auto; background: #1c1c1e; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 70%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4; }
+    .msg.mine { align-self: flex-end; background: #30d158; color: #000; }
+    .msg.theirs { align-self: flex-start; background: #2c2c2e; color: #eee; }
+    .msg .sender { font-size: 11px; opacity: 0.6; margin-bottom: 4px; }
+    .msg .time { font-size: 11px; opacity: 0.5; margin-top: 4px; text-align: right; }
+    #inputRow { display: flex; gap: 8px; }
+    #input { flex: 1; background: #2c2c2e; border: none; border-radius: 22px; padding: 12px 16px; color: #eee; font-size: 15px; outline: none; }
+    #send { background: #0a84ff; color: #fff; border: none; border-radius: 22px; padding: 12px 20px; font-size: 15px; cursor: pointer; }
+    #send:disabled { opacity: 0.4; cursor: default; }
+  </style>
+</head>
+<body>
+  <h2>VareFy — Client Chat Test</h2>
+  <div id="status">Connecting...</div>
+  <div id="messages"></div>
+  <div id="inputRow">
+    <input id="input" type="text" placeholder="Message as client..." disabled />
+    <button id="send" disabled onclick="send()">Send</button>
+  </div>
+
+  <script>
+    // ── CONFIG ─────────────────────────────────────────────
+    const API_KEY     = "ceexz838897y";
+    const CLIENT_ID   = "84e2a45d-0cec-427d-8d2f-30f158a96b6a";
+    const CLIENT_NAME = "Fake Client1";
+    const TOKEN       = "PASTE_TOKEN_HERE";       // from gen-stream-token.ts
+    const CHANNEL_ID  = "PASTE_CHANNEL_ID_HERE";  // e.g. work_order_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    // ───────────────────────────────────────────────────────
+
+    const client  = new StreamChat(API_KEY);
+    let   channel = null;
+
+    async function init() {
+      setStatus("Connecting as " + CLIENT_NAME + "...");
+      await client.connectUser({ id: CLIENT_ID, name: CLIENT_NAME }, TOKEN);
+      channel = client.channel("messaging", CHANNEL_ID);
+      const state = await channel.watch();
+
+      setStatus("Connected — " + CLIENT_NAME);
+      document.getElementById("input").disabled  = false;
+      document.getElementById("send").disabled   = false;
+
+      state.messages.forEach(addMessage);
+      channel.on("message.new", e => addMessage(e.message));
+    }
+
+    function addMessage(msg) {
+      const isOwn = msg.user.id === CLIENT_ID;
+      const div = document.createElement("div");
+      div.className = "msg " + (isOwn ? "mine" : "theirs");
+      div.innerHTML = `
+        ${!isOwn ? `<div class="sender">${msg.user.name ?? msg.user.id}</div>` : ""}
+        <div>${msg.text}</div>
+        <div class="time">${new Date(msg.created_at).toLocaleTimeString()}</div>
+      `;
+      document.getElementById("messages").appendChild(div);
+      document.getElementById("messages").scrollTop = 9999;
+    }
+
+    async function send() {
+      const text = document.getElementById("input").value.trim();
+      if (!text || !channel) return;
+      document.getElementById("input").value = "";
+      await channel.sendMessage({ text });
+    }
+
+    document.getElementById("input").addEventListener("keydown", e => {
+      if (e.key === "Enter") send();
+    });
+
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    init().catch(e => setStatus("Error: " + e.message));
+  </script>
+</body>
+</html>

@@ -55,7 +55,7 @@ struct HireConfirmationView: View {
                             title: "Confirm Job",
                             isEnabled: order.status == .pending
                         ) {
-                            workOrderVM.confirmJob(for: orderId)
+                            Task { await workOrderVM.confirmJob(for: orderId) }
                             dismiss()
                         }
 

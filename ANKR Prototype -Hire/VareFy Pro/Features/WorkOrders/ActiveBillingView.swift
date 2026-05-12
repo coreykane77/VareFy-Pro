@@ -8,6 +8,10 @@ struct ActiveBillingView: View {
     @State private var navigateToPostWork = false
     @State private var showMaterialsSheet  = false
     @State private var showReportIssue = false
+    @State private var showCreateEstimate = false
+    @State private var showReturnToast = false
+    @State private var showLeftToast = false
+    @State private var showEstimateSentToast = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
 
@@ -21,9 +25,18 @@ struct ActiveBillingView: View {
                         VStack(spacing: 20) {
                             if !workOrderVM.isInsideRadius && order.status == .activeBilling {
                                 BannerWarningView(
-                                    message: "You've left the job area. Pause or complete your work order.",
+                                    message: "You've left the job area.",
                                     countdown: workOrderVM.radiusCountdownSeconds > 0
-                                        ? workOrderVM.radiusCountdownSeconds : nil
+                                        ? workOrderVM.radiusCountdownSeconds : nil,
+                                    onStillHere: {
+                                        Haptics.medium()
+                                        workOrderVM.setInsideRadius(for: orderId)
+                                    },
+                                    onLargeProperty: order.radiusExpanded ? nil : {
+                                        Haptics.medium()
+                                        Task { await workOrderVM.expandRadius(for: orderId) }
+                                        workOrderVM.setInsideRadius(for: orderId)
+                                    }
                                 )
                             }
                             timerCard(order)
@@ -38,26 +51,31 @@ struct ActiveBillingView: View {
 
                     VStack(spacing: 12) {
                         if order.status == .activeBilling {
+                            PrimaryButton(title: "Complete Work") {
+                                Task { await workOrderVM.moveToPostWork(for: orderId) }
+                            }
                             Button {
                                 Haptics.medium()
-                                workOrderVM.pauseWork(for: orderId)
+                                showCreateEstimate = true
                             } label: {
-                                Label("Pause Work", systemImage: "pause.fill")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.primary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(Color.appCard)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                                HStack(spacing: 8) {
+                                    Image(systemName: "doc.badge.plus")
+                                        .font(.subheadline)
+                                    Text("Create Estimate")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundStyle(Color.varefyProCyan)
+                                .frame(maxWidth: .infinity)
+                                .padding(14)
+                                .background(Color.varefyProCyan.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
                             }
-                            PrimaryButton(title: "Complete Work") {
-                                workOrderVM.moveToPostWork(for: orderId)
-                            }
+                            .buttonStyle(.plain)
                         } else if order.status == .paused {
                             Button {
                                 Haptics.medium()
-                                workOrderVM.resumeWork(for: orderId)
+                                Task { await workOrderVM.resumeWork(for: orderId) }
                             } label: {
                                 Label("Resume Work", systemImage: "play.fill")
                                     .font(.headline)
@@ -67,6 +85,27 @@ struct ActiveBillingView: View {
                                     .padding(.vertical, 16)
                                     .background(Color.varefyProCyan)
                                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                            }
+                            if !order.radiusExpanded {
+                                Button {
+                                    Haptics.medium()
+                                    Task { await workOrderVM.expandRadius(for: orderId) }
+                                    workOrderVM.setInsideRadius(for: orderId)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
+                                            .font(.subheadline)
+                                        Text("Large Property — Expand Radius")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .foregroundStyle(Color.varefyProCyan)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(14)
+                                    .background(Color.varefyProCyan.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
 
@@ -97,9 +136,65 @@ struct ActiveBillingView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if showEstimateSentToast {
+                toastBanner(
+                    icon: "doc.badge.checkmark",
+                    message: "Estimate sent to client",
+                    color: Color.varefyProCyan
+                )
+            } else if showReturnToast {
+                toastBanner(
+                    icon: "bell.fill",
+                    message: "Client notified of your return to the job site",
+                    color: .green
+                )
+            } else if showLeftToast {
+                toastBanner(
+                    icon: "bell.fill",
+                    message: "Client notified that you've left the job site",
+                    color: .orange
+                )
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: showEstimateSentToast)
+        .animation(.easeInOut(duration: 0.35), value: showReturnToast)
+        .animation(.easeInOut(duration: 0.35), value: showLeftToast)
+        .onChange(of: workOrderVM.isInsideRadius) { _, isInside in
+            if isInside {
+                let wasPaused = workOrderVM.order(id: orderId)?.status == .paused
+                if wasPaused {
+                    Task { await workOrderVM.resumeWork(for: orderId) }
+                    showLeftToast = false
+                    showReturnToast = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(3))
+                        showReturnToast = false
+                    }
+                } else {
+                    // Countdown cancelled before auto-pause — pro never really left
+                    showLeftToast = false
+                }
+            } else {
+                showReturnToast = false
+                showLeftToast = true
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    showLeftToast = false
+                }
+            }
+        }
         .navigationTitle("Active Job")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: NavRoute.chat(orderId)) {
+                    Image(systemName: "message.fill")
+                        .foregroundStyle(Color.varefyProCyan)
+                }
+            }
+        }
         .sheet(isPresented: $showReportIssue) {
             ReportIssueSheet(orderId: orderId)
                 .environment(workOrderVM)
@@ -114,6 +209,16 @@ struct ActiveBillingView: View {
                 navigateToPostWork = true
             }
         }
+        .sheet(isPresented: $showCreateEstimate) {
+            CreateEstimateView(orderId: orderId) {
+                showEstimateSentToast = true
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    showEstimateSentToast = false
+                }
+            }
+            .environment(workOrderVM)
+        }
         .sheet(isPresented: $showMaterialsSheet) {
             if let idx = workOrderVM.index(of: orderId) {
                 MaterialsWorksheetView(items: Binding(
@@ -122,6 +227,28 @@ struct ActiveBillingView: View {
                 ))
             }
         }
+    }
+
+    // MARK: - Toast
+
+    @ViewBuilder
+    private func toastBanner(icon: String, message: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(.white)
+                .font(.subheadline)
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+            Spacer()
+        }
+        .padding(14)
+        .background(color.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Timer Card
@@ -176,7 +303,7 @@ struct ActiveBillingView: View {
                 .tracking(0.8)
             HStack(spacing: 0) {
                 radiusToggleButton(label: "Inside Radius", isSelected: workOrderVM.isInsideRadius) {
-                    workOrderVM.setInsideRadius()
+                    workOrderVM.setInsideRadius(for: orderId)
                 }
                 radiusToggleButton(label: "Outside Radius", isSelected: !workOrderVM.isInsideRadius) {
                     workOrderVM.setOutsideRadius(for: orderId)

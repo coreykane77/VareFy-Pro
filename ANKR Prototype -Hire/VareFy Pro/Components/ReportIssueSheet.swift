@@ -41,9 +41,8 @@ struct ReportIssueSheet: View {
                 }
             }
             .onAppear {
-                // Auto-pause billing while the pro files a report
                 if workOrderVM.order(id: orderId)?.status == .activeBilling {
-                    workOrderVM.pauseWork(for: orderId)
+                    Task { await workOrderVM.pauseWork(for: orderId) }
                 }
             }
         }

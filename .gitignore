@@ -1,0 +1,27 @@
+# Xcode user-specific state — changes every session, never share
+*.xcuserstate
+xcuserdata/
+
+# Derived build output
+DerivedData/
+*.ipa
+*.xcarchive
+build/
+
+# CocoaPods (not used, but exclude if ever added)
+Pods/
+Podfile.lock
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Swift Package Manager build artifacts (resolved versions ARE committed)
+.build/
+.swiftpm/xcode/
+
+# Supabase CLI runtime state
+supabase/.temp/
+
+# Editor scratch
+*.orig

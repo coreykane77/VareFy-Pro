@@ -7,10 +7,10 @@ struct ManagePayoutView: View {
     @State private var amountText: String = ""
     @State private var isInstant: Bool = true
     @State private var showConfirmation = false
+    @FocusState private var amountFocused: Bool
 
     private var amount: Double { Double(amountText) ?? 0 }
     private var fee: Double { isInstant ? amount * 0.015 : 0 }
-    private var total: Double { amount + fee }
     private var canSubmit: Bool { amount > 0 && amount <= walletVM.balance }
 
     var body: some View {
@@ -20,29 +20,17 @@ struct ManagePayoutView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Amount input
                         amountInput
-
-                        // Method picker
                         methodPicker
-
-                        // Destination row
                         destinationRow
-
-                        // Fee disclosure
                         feeDisclosure
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
                 }
+                .scrollDismissesKeyboard(.interactively)
 
-                // Slide to confirm
                 VStack(spacing: 12) {
-                    if !canSubmit && !amountText.isEmpty {
-                        Text(amount > walletVM.balance ? "Amount exceeds available balance." : "Enter a valid amount.")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
                     if canSubmit {
                         SlideToConfirmView(label: "Slide to Confirm Payout") {
                             walletVM.requestPayout(amount: amount, isInstant: isInstant)
@@ -53,18 +41,30 @@ struct ManagePayoutView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.bottom, Constants.bottomBarHeight + 24)
                 .background(Color.appBackground)
             }
         }
         .navigationTitle("Manage Payout")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { amountFocused = false }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.varefyProCyan)
+            }
+        }
         .popButton()
+        .onAppear {
+            let floored = floor(walletVM.balance * 100) / 100
+            amountText = String(format: "%.2f", floored)
+        }
         .alert("Payout Submitted", isPresented: $showConfirmation) {
             Button("Done") { dismiss() }
         } message: {
-            Text("\(total.formattedAsCurrency()) payout initiated.")
+            Text("\((amount - fee).formattedAsCurrency()) will be deposited to your account.")
         }
     }
 
@@ -83,14 +83,32 @@ struct ManagePayoutView: View {
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(.primary)
                     .keyboardType(.decimalPad)
+                    .focused($amountFocused)
             }
             .padding(16)
             .background(Color.appCard)
             .clipShape(RoundedRectangle(cornerRadius: 14))
 
-            Text("Available: \(walletVM.balance.formattedAsCurrency())")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Available: \(walletVM.balance.formattedAsCurrency())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    let floored = floor(walletVM.balance * 100) / 100
+                    amountText = String(format: "%.2f", floored)
+                    amountFocused = false
+                } label: {
+                    Text("Use Full Balance")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.varefyProCyan)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.varefyProCyan.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
         }
     }
 
@@ -180,7 +198,7 @@ struct ManagePayoutView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
                 Spacer()
-                Text(amount > 0 ? amount.formattedAsCurrency() : "--")
+                Text(amount > 0 ? (amount - fee).formattedAsCurrency() : "--")
                     .font(.subheadline)
                     .fontWeight(.bold)
                     .foregroundStyle(Color.varefyProCyan)

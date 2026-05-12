@@ -218,15 +218,15 @@ struct CompletionSummaryView: View {
     private func proofOfWorkSection(_ order: WorkOrder) -> some View {
         sectionCard(title: "PROOF OF WORK") {
             VStack(alignment: .leading, spacing: 16) {
-                photoRow(title: "Before Work", photos: order.prePhotos, met: order.prePhotoCount >= Constants.minPhotosRequired)
+                photoRow(title: "Before Work", records: order.prePhotoRecords, met: order.confirmedPrePhotoCount >= Constants.minPhotosRequired)
                 Divider().background(Color.white.opacity(0.1))
-                photoRow(title: "After Completion", photos: order.postPhotos, met: order.postPhotoCount >= Constants.minPhotosRequired)
+                photoRow(title: "After Completion", records: order.postPhotoRecords, met: order.confirmedPostPhotoCount >= Constants.minPhotosRequired)
             }
         }
     }
 
     @ViewBuilder
-    private func photoRow(title: String, photos: [UIImage], met: Bool) -> some View {
+    private func photoRow(title: String, records: [PhotoRecord], met: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
@@ -239,19 +239,27 @@ struct CompletionSummaryView: View {
                         .foregroundStyle(.green)
                 }
             }
-            if photos.isEmpty {
+            if records.isEmpty {
                 Text("No photos recorded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(Array(photos.enumerated()), id: \.offset) { _, photo in
-                            Image(uiImage: photo)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        ForEach(records) { record in
+                            Group {
+                                if let image = record.localImage {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                } else if let url = record.signedURL {
+                                    AsyncImage(url: url) { img in
+                                        img.resizable().scaledToFill()
+                                    } placeholder: { Color.appCard }
+                                } else {
+                                    Color.appCard
+                                }
+                            }
+                            .frame(width: 80, height: 80)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }

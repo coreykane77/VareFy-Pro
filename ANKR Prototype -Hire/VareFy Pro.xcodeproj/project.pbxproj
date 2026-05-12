@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7C4E66652FB16001003AEBC2 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 7C4E66642FB16001003AEBC2 /* Supabase */; };
+		7C4E66742FB18516003AEBC2 /* StreamChat in Frameworks */ = {isa = PBXBuildFile; productRef = 7C4E66732FB18516003AEBC2 /* StreamChat */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7C64C6A92F4F67C4003FA172 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C4E66742FB18516003AEBC2 /* StreamChat in Frameworks */,
+				7C4E66652FB16001003AEBC2 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,12 +79,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7C4E66632FB16001003AEBC2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		7C64C6922F4F67C2003FA172 = {
 			isa = PBXGroup;
 			children = (
 				7C64C69D2F4F67C2003FA172 /* VareFy Pro */,
 				7C64C6AB2F4F67C4003FA172 /* VareFy -HireTests */,
 				7C64C6B52F4F67C5003FA172 /* VareFy Prototype -HireUITests */,
+				7C4E66632FB16001003AEBC2 /* Frameworks */,
 				7C64C69C2F4F67C2003FA172 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,6 +127,8 @@
 			);
 			name = "VareFy Pro";
 			packageProductDependencies = (
+				7C4E66642FB16001003AEBC2 /* Supabase */,
+				7C4E66732FB18516003AEBC2 /* StreamChat */,
 			);
 			productName = "VareFy Pro";
 			productReference = 7C64C69B2F4F67C2003FA172 /* VareFy Pro.app */;
@@ -195,6 +212,10 @@
 			);
 			mainGroup = 7C64C6922F4F67C2003FA172;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7C4E665D2FB15DA4003AEBC2 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				7C4E66722FB18516003AEBC2 /* XCRemoteSwiftPackageReference "stream-chat-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7C64C69C2F4F67C2003FA172 /* Products */;
 			projectDirPath = "";
@@ -395,6 +416,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "VareFy Pro/VareFy Pro.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4383MZ9K3P;
@@ -429,6 +451,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "VareFy Pro/VareFy Pro.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4383MZ9K3P;
@@ -582,6 +605,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7C4E665D2FB15DA4003AEBC2 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+		7C4E66722FB18516003AEBC2 /* XCRemoteSwiftPackageReference "stream-chat-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/GetStream/stream-chat-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7C4E66642FB16001003AEBC2 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7C4E665D2FB15DA4003AEBC2 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		7C4E66732FB18516003AEBC2 /* StreamChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7C4E66722FB18516003AEBC2 /* XCRemoteSwiftPackageReference "stream-chat-swift" */;
+			productName = StreamChat;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7C64C6932F4F67C2003FA172 /* Project object */;
 }

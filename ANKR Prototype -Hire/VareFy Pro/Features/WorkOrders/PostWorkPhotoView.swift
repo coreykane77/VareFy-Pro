@@ -1,21 +1,16 @@
 import SwiftUI
-import UIKit
 
 struct PostWorkPhotoView: View {
     let orderId: UUID
     @Environment(WorkOrderViewModel.self) private var workOrderVM
-    @Environment(WalletViewModel.self) private var walletVM
-    @Environment(\.dismiss) private var dismiss
+    @Environment(AuthManager.self) private var authManager
 
     @State private var showImagePicker = false
-    @State private var navigateToSummary = false
+    @State private var navigateToReview = false
     @State private var showReportIssue = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
-
-    private var canComplete: Bool {
-        workOrderVM.canComplete(for: orderId)
-    }
+    private var canComplete: Bool { workOrderVM.canComplete(for: orderId) }
 
     var body: some View {
         ZStack {
@@ -30,6 +25,7 @@ struct PostWorkPhotoView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
+                        .padding(.bottom, 100)
                     }
 
                     VStack(spacing: 12) {
@@ -46,14 +42,9 @@ struct PostWorkPhotoView: View {
                             .background(Color.orange.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
-                        PrimaryButton(
-                            title: "Submit Completion",
-                            isEnabled: canComplete
-                        ) {
-                            workOrderVM.completeWork(for: orderId, walletVM: walletVM)
-                            navigateToSummary = true
+                        PrimaryButton(title: "Submit Completion", isEnabled: canComplete) {
+                            navigateToReview = true
                         }
-
                         Button {
                             Haptics.medium()
                             showReportIssue = true
@@ -84,20 +75,20 @@ struct PostWorkPhotoView: View {
         .navigationTitle("Post Work Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .task { await workOrderVM.fetchPhotos(for: orderId) }
         .sheet(isPresented: $showReportIssue) {
-            ReportIssueSheet(orderId: orderId)
-                .environment(workOrderVM)
+            ReportIssueSheet(orderId: orderId).environment(workOrderVM)
         }
         .closeButton()
-        .navigationDestination(isPresented: $navigateToSummary) {
-            CompletionSummaryView(orderId: orderId)
+        .navigationDestination(isPresented: $navigateToReview) {
+            SubmitReviewView(orderId: orderId)
         }
         .sheet(isPresented: $showImagePicker) {
             ImagePickerView(selectedImage: Binding(
                 get: { nil },
                 set: { img in
-                    if let img = img {
-                        workOrderVM.addPostPhoto(img, for: orderId)
+                    if let img, let userId = authManager.currentUserId {
+                        Task { await workOrderVM.addPostPhoto(img, for: orderId, uploadedBy: userId) }
                     }
                 }
             ))
@@ -114,7 +105,7 @@ struct PostWorkPhotoView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                Text("\(order.postPhotoCount) of \(Constants.minPhotosRequired) required uploaded")
+                Text("\(order.confirmedPostPhotoCount) of \(Constants.minPhotosRequired) required uploaded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -136,9 +127,9 @@ struct PostWorkPhotoView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(order.postPhotos.enumerated()), id: \.offset) { idx, photo in
-                        photoThumb(photo: photo) {
-                            workOrderVM.removePostPhoto(at: idx, for: orderId)
+                    ForEach(order.postPhotoRecords) { record in
+                        photoThumb(record: record) {
+                            Task { await workOrderVM.removePostPhoto(record: record, for: orderId) }
                         }
                     }
                     if order.postPhotoCount < Constants.maxPhotosPerGate {
@@ -150,19 +141,42 @@ struct PostWorkPhotoView: View {
     }
 
     @ViewBuilder
-    private func photoThumb(photo: UIImage, onDelete: @escaping () -> Void) -> some View {
+    private func photoThumb(record: PhotoRecord, onDelete: @escaping () -> Void) -> some View {
         ZStack(alignment: .topTrailing) {
-            Image(uiImage: photo)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 90, height: 90)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.primary)
-                    .background(Color.black.opacity(0.6))
-                    .clipShape(Circle())
-                    .padding(4)
+            ZStack {
+                if let image = record.localImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else if let url = record.signedURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.appCard
+                    }
+                } else {
+                    Color.appCard
+                }
+
+                if record.isUploading {
+                    Color.black.opacity(0.45)
+                    ProgressView().tint(.white)
+                }
+            }
+            .frame(width: 90, height: 90)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            if !record.isUploading {
+                Button(action: {
+                    Haptics.light()
+                    onDelete()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.primary)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .padding(4)
+                }
             }
         }
     }
@@ -186,12 +200,6 @@ struct PostWorkPhotoView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(Color.varefyProCyan.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4]))
             )
-        }
-        .contextMenu {
-            Button("Add Sample Photo") {
-                let sample = PhotoServiceMock.samplePhoto(color: .systemOrange, label: "Post \((workOrderVM.order(id: orderId)?.postPhotoCount ?? 0) + 1)")
-                workOrderVM.addPostPhoto(sample, for: orderId)
-            }
         }
     }
 }

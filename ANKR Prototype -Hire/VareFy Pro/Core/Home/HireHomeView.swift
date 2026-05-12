@@ -7,6 +7,7 @@ enum AppTab {
 struct HireHomeView: View {
     @Environment(WorkOrderViewModel.self) private var workOrderVM
     @Environment(WalletViewModel.self) private var walletVM
+    @Environment(AuthManager.self) private var authManager
 
     @State private var path = NavigationPath()
     @State private var activeTab: AppTab = .home
@@ -96,6 +97,11 @@ struct HireHomeView: View {
             path = NavigationPath()
             activeTab = .home
         })
+        .task {
+            guard let proId = authManager.currentUserId else { return }
+            await workOrderVM.fetchWorkOrders(proId: proId)
+            await workOrderVM.subscribeToWorkOrders(proId: proId)
+        }
     }
 
     // MARK: - Map + Overlay
