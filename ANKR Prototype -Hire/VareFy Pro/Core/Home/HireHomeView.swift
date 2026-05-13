@@ -27,7 +27,7 @@ struct HireHomeView: View {
                 case .workOrdersList:
                     WorkOrdersListView()
                 case .workOrderDetail(let id):
-                    WorkOrderDetailView(orderId: id)
+                    WorkOrderDetailView(orderId: id, path: $path)
                 case .drive(let id):
                     DriveView(orderId: id)
                 case .preWork(let id):

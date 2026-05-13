@@ -54,24 +54,37 @@ struct ActiveBillingView: View {
                             PrimaryButton(title: "Complete Work") {
                                 Task { await workOrderVM.moveToPostWork(for: orderId) }
                             }
-                            Button {
-                                Haptics.medium()
-                                showCreateEstimate = true
-                            } label: {
+                            if workOrderVM.sentEstimateOrderIds.contains(orderId) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "doc.badge.plus")
+                                    Image(systemName: "doc.badge.checkmark")
                                         .font(.subheadline)
-                                    Text("Create Estimate")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
+                                    Text("Estimate Sent")
+                                        .font(.subheadline).fontWeight(.semibold)
                                 }
-                                .foregroundStyle(Color.varefyProCyan)
+                                .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(14)
-                                .background(Color.varefyProCyan.opacity(0.1))
+                                .background(Color.appCard)
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
+                            } else {
+                                Button {
+                                    Haptics.medium()
+                                    showCreateEstimate = true
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "doc.badge.plus")
+                                            .font(.subheadline)
+                                        Text("Create Estimate")
+                                            .font(.subheadline).fontWeight(.semibold)
+                                    }
+                                    .foregroundStyle(Color.varefyProCyan)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(14)
+                                    .background(Color.varefyProCyan.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         } else if order.status == .paused {
                             Button {
                                 Haptics.medium()

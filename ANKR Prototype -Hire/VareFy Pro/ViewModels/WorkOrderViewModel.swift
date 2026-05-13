@@ -84,6 +84,7 @@ class WorkOrderViewModel {
     var radiusCountdownSeconds: Int = 0
     var unreadChatOrderIds: Set<UUID> = []
     var currentChatOrderId: UUID? = nil
+    var sentEstimateOrderIds: Set<UUID> = []
 
     var hasUnreadChats: Bool { !unreadChatOrderIds.isEmpty }
 
@@ -349,6 +350,7 @@ class WorkOrderViewModel {
             throw NSError(domain: "VareFy", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: errMsg])
         }
+        sentEstimateOrderIds.insert(orderId)
     }
 
     // MARK: - Materials (local until Phase 7 photo upload)

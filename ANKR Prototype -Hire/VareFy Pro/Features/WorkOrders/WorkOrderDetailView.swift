@@ -3,12 +3,14 @@ import Combine
 
 struct WorkOrderDetailView: View {
     let orderId: UUID
+    @Binding var path: NavigationPath
     @Environment(WorkOrderViewModel.self) private var workOrderVM
     @Environment(WalletViewModel.self) private var walletVM
     @Environment(AuthManager.self) private var auth
     @State private var showMaterialsSheet = false
     @State private var showReportIssue = false
     @State private var proHasChatted: Bool = false
+    @State private var didAutoNavigate = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
 
@@ -39,7 +41,13 @@ struct WorkOrderDetailView: View {
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
         .closeButton()
         .onAppear {
-            guard order?.status == .pending else { return }
+            let status = order?.status
+            if !didAutoNavigate, status == .activeBilling || status == .paused {
+                didAutoNavigate = true
+                path.append(NavRoute.activeBilling(orderId))
+                return
+            }
+            guard status == .pending else { return }
             Task {
                 proHasChatted = await ChatViewModel.currentUserHasSentMessage(inChannelFor: orderId)
             }
