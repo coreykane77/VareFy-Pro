@@ -11,6 +11,7 @@ struct CreateEstimateView: View {
     @State private var estimateDescription = ""
     @State private var estimatedHoursText = ""
     @State private var estimatedMaterialsText = ""
+    @State private var startImmediately: Bool = false
     @State private var proposedStartDate: Date = defaultStartDate()
     @State private var validForDays = 30
     @State private var isSending = false
@@ -30,7 +31,7 @@ struct CreateEstimateView: View {
     private var canSend: Bool {
         !estimateTitle.trimmingCharacters(in: .whitespaces).isEmpty &&
         estimatedHours > 0 &&
-        proposedStartDate > Date()
+        (startImmediately || proposedStartDate > Date())
     }
 
     var body: some View {
@@ -191,16 +192,56 @@ struct CreateEstimateView: View {
 
     private var scheduleCard: some View {
         sectionCard(title: "PROPOSED START DATE") {
-            DatePicker(
-                "",
-                selection: $proposedStartDate,
-                in: Date()...,
-                displayedComponents: [.date, .hourAndMinute]
-            )
-            .datePickerStyle(.compact)
-            .tint(Color.varefyProCyan)
-            .labelsHidden()
+            VStack(alignment: .leading, spacing: 14) {
+                // Immediate / Schedule picker
+                HStack(spacing: 8) {
+                    startOptionPill(label: "Immediate", icon: "bolt.fill", selected: startImmediately) {
+                        Haptics.selection()
+                        startImmediately = true
+                    }
+                    startOptionPill(label: "Schedule Date", icon: "calendar", selected: !startImmediately) {
+                        Haptics.selection()
+                        startImmediately = false
+                    }
+                }
+
+                if startImmediately {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .font(.caption).foregroundStyle(Color.varefyProCyan)
+                        Text("Work can begin as soon as the client accepts.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    DatePicker(
+                        "",
+                        selection: $proposedStartDate,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.compact)
+                    .tint(Color.varefyProCyan)
+                    .labelsHidden()
+                }
+            }
         }
+    }
+
+    private func startOptionPill(label: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption).fontWeight(.semibold)
+                Text(label)
+                    .font(.subheadline).fontWeight(.semibold)
+            }
+            .foregroundStyle(selected ? .black : .primary)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(selected ? Color.varefyProCyan : Color.appBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Validity
@@ -273,7 +314,7 @@ struct CreateEstimateView: View {
                 validForDays: validForDays,
                 estimatedHours: estimatedHours,
                 estimatedMaterials: estimatedMaterials,
-                proposedStartDate: proposedStartDate
+                proposedStartDate: startImmediately ? Date() : proposedStartDate
             )
             onSent()
             dismiss()
