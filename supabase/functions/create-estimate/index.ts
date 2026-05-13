@@ -19,8 +19,9 @@ serve(async (req) => {
       estimated_hours,
       estimated_materials = 0,
       proposed_start_date,
-      materials_deposit_enabled = false,
-      materials_deposit_amount = 0,
+      title = null,
+      description = null,
+      valid_for_days = 30,
     } = await req.json();
 
     if (!work_order_id || !estimated_hours || !proposed_start_date) {
@@ -50,12 +51,15 @@ serve(async (req) => {
       .from("estimates")
       .insert({
         work_order_id,
+        title,
+        description,
+        valid_for_days: Number(valid_for_days) || 30,
         estimated_hours: Number(estimated_hours),
         estimated_materials: Number(estimated_materials),
         estimated_total: estimatedTotal,
         proposed_start_date,
-        materials_deposit_enabled,
-        materials_deposit_amount: materials_deposit_enabled ? Number(materials_deposit_amount) : 0,
+        materials_deposit_enabled: false,
+        materials_deposit_amount: 0,
         status: "pending",
         created_at: now,
       })

@@ -311,19 +311,21 @@ class WorkOrderViewModel {
 
     func createEstimate(
         for orderId: UUID,
+        title: String,
+        description: String,
+        validForDays: Int,
         estimatedHours: Double,
         estimatedMaterials: Double,
-        proposedStartDate: Date,
-        materialsDepositEnabled: Bool,
-        materialsDepositAmount: Double
+        proposedStartDate: Date
     ) async throws {
         struct Body: Encodable {
             let work_order_id: String
+            let title: String
+            let description: String
+            let valid_for_days: Int
             let estimated_hours: Double
             let estimated_materials: Double
             let proposed_start_date: String
-            let materials_deposit_enabled: Bool
-            let materials_deposit_amount: Double
         }
         struct CreateEstimateResponse: Decodable {
             let success: Bool
@@ -335,11 +337,12 @@ class WorkOrderViewModel {
             .invoke("create-estimate", options: FunctionInvokeOptions(
                 body: Body(
                     work_order_id: orderId.uuidString,
+                    title: title,
+                    description: description,
+                    valid_for_days: validForDays,
                     estimated_hours: estimatedHours,
                     estimated_materials: estimatedMaterials,
-                    proposed_start_date: iso.string(from: proposedStartDate),
-                    materials_deposit_enabled: materialsDepositEnabled,
-                    materials_deposit_amount: materialsDepositAmount
+                    proposed_start_date: iso.string(from: proposedStartDate)
                 )
             ))
         if let errMsg = response.error {

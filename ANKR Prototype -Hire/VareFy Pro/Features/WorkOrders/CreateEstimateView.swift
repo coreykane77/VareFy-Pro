@@ -7,28 +7,30 @@ struct CreateEstimateView: View {
     @Environment(WorkOrderViewModel.self) private var workOrderVM
     @Environment(\.dismiss) private var dismiss
 
+    @State private var estimateTitle = ""
+    @State private var estimateDescription = ""
     @State private var estimatedHoursText = ""
     @State private var estimatedMaterialsText = ""
     @State private var proposedStartDate: Date = defaultStartDate()
-    @State private var depositEnabled = false
-    @State private var depositAmountText = ""
+    @State private var validForDays = 30
     @State private var isSending = false
     @State private var errorMessage: String?
 
     @FocusState private var focusedField: Field?
-    enum Field { case hours, materials, deposit }
+    enum Field { case title, description, hours, materials }
+
+    private let validityOptions = [14, 30, 45, 60]
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
     private var hourlyRate: Double { order?.hourlyRate ?? 0 }
     private var estimatedHours: Double { Double(estimatedHoursText) ?? 0 }
     private var estimatedMaterials: Double { Double(estimatedMaterialsText) ?? 0 }
-    private var depositAmount: Double { Double(depositAmountText) ?? 0 }
     private var estimatedTotal: Double { (estimatedHours * hourlyRate) + estimatedMaterials }
 
     private var canSend: Bool {
+        !estimateTitle.trimmingCharacters(in: .whitespaces).isEmpty &&
         estimatedHours > 0 &&
-        proposedStartDate > Date() &&
-        (!depositEnabled || depositAmount > 0)
+        proposedStartDate > Date()
     }
 
     var body: some View {
@@ -40,10 +42,11 @@ struct CreateEstimateView: View {
                     ScrollView {
                         VStack(spacing: 20) {
                             contextBanner
+                            titleCard
                             scopeCard
                             totalCard
                             scheduleCard
-                            depositCard
+                            validityCard
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
@@ -91,25 +94,56 @@ struct CreateEstimateView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Scope
+    // MARK: - Title & Description
+
+    private var titleCard: some View {
+        sectionCard(title: "ESTIMATE DETAILS") {
+            VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("TITLE")
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundStyle(.secondary).tracking(0.8)
+                    TextField("e.g. Kitchen Remodel — Cabinets & Flooring", text: $estimateTitle)
+                        .focused($focusedField, equals: .title)
+                        .padding(14)
+                        .background(Color.appBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+
+                Divider().background(Color.white.opacity(0.08))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SCOPE OF WORK")
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundStyle(.secondary).tracking(0.8)
+                    TextField("Describe what's included in this estimate…",
+                              text: $estimateDescription, axis: .vertical)
+                        .focused($focusedField, equals: .description)
+                        .lineLimit(3...6)
+                        .padding(14)
+                        .background(Color.appBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+    }
+
+    // MARK: - Scope (hours + materials)
 
     private var scopeCard: some View {
-        sectionCard(title: "SCOPE") {
+        sectionCard(title: "PRICING") {
             VStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("ESTIMATED HOURS")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .tracking(0.8)
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundStyle(.secondary).tracking(0.8)
                     HStack {
                         TextField("0.0", text: $estimatedHoursText)
                             .keyboardType(.decimalPad)
                             .focused($focusedField, equals: .hours)
                         Spacer()
                         Text("hrs")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     .padding(14)
                     .background(Color.appBackground)
@@ -120,13 +154,10 @@ struct CreateEstimateView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("ESTIMATED MATERIALS")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .tracking(0.8)
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundStyle(.secondary).tracking(0.8)
                     HStack {
-                        Text("$")
-                            .foregroundStyle(.secondary)
+                        Text("$").foregroundStyle(.secondary)
                         TextField("0.00", text: $estimatedMaterialsText)
                             .keyboardType(.decimalPad)
                             .focused($focusedField, equals: .materials)
@@ -146,12 +177,10 @@ struct CreateEstimateView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(estimatedTotal.formattedAsCurrency())
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.title2).fontWeight(.bold)
                         .foregroundStyle(estimatedHours > 0 ? Color.varefyProCyan : .secondary)
                     Text("\(hourlyRate.formattedAsCurrency())/hr × \(String(format: "%.1f", estimatedHours)) hrs + materials")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -174,45 +203,24 @@ struct CreateEstimateView: View {
         }
     }
 
-    // MARK: - Deposit
+    // MARK: - Validity
 
-    private var depositCard: some View {
-        sectionCard(title: "MATERIALS ADVANCE") {
-            VStack(spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Request Advance")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                        Text("Client deposits before work begins")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+    private var validityCard: some View {
+        sectionCard(title: "VALID FOR") {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Valid for", selection: $validForDays) {
+                    ForEach(validityOptions, id: \.self) { days in
+                        Text("\(days) days").tag(days)
                     }
-                    Spacer()
-                    Toggle("", isOn: $depositEnabled)
-                        .labelsHidden()
-                        .tint(Color.varefyProCyan)
                 }
+                .pickerStyle(.segmented)
+                .tint(Color.varefyProCyan)
 
-                if depositEnabled {
-                    Divider().background(Color.white.opacity(0.08))
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("DEPOSIT AMOUNT")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .tracking(0.8)
-                        HStack {
-                            Text("$")
-                                .foregroundStyle(.secondary)
-                            TextField("0.00", text: $depositAmountText)
-                                .keyboardType(.decimalPad)
-                                .focused($focusedField, equals: .deposit)
-                        }
-                        .padding(14)
-                        .background(Color.appBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
+                let expiresAt = Calendar.current.date(byAdding: .day, value: validForDays, to: Date()) ?? Date()
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill").font(.caption2).foregroundStyle(.secondary)
+                    Text("Client offer expires \(expiresAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -224,27 +232,22 @@ struct CreateEstimateView: View {
         VStack(spacing: 10) {
             if let msg = errorMessage {
                 Text(msg)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(.caption).foregroundStyle(.red)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 4)
             }
 
-            PrimaryButton(title: isSending ? "Sending..." : "Send Estimate to Client",
+            PrimaryButton(title: isSending ? "Sending…" : "Send Estimate to Client",
                           isEnabled: canSend && !isSending) {
                 Haptics.medium()
                 Task { await sendEstimate() }
             }
 
-            Button {
-                dismiss()
-            } label: {
+            Button { dismiss() } label: {
                 Text("Cancel")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.subheadline).fontWeight(.semibold)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(14)
+                    .frame(maxWidth: .infinity).padding(14)
                     .background(Color.white.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
@@ -264,11 +267,12 @@ struct CreateEstimateView: View {
         do {
             try await workOrderVM.createEstimate(
                 for: orderId,
+                title: estimateTitle.trimmingCharacters(in: .whitespaces),
+                description: estimateDescription.trimmingCharacters(in: .whitespaces),
+                validForDays: validForDays,
                 estimatedHours: estimatedHours,
                 estimatedMaterials: estimatedMaterials,
-                proposedStartDate: proposedStartDate,
-                materialsDepositEnabled: depositEnabled,
-                materialsDepositAmount: depositAmount
+                proposedStartDate: proposedStartDate
             )
             onSent()
             dismiss()
@@ -284,10 +288,8 @@ struct CreateEstimateView: View {
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.caption)
-                .fontWeight(.heavy)
-                .foregroundStyle(.secondary)
-                .tracking(1.2)
+                .font(.caption).fontWeight(.heavy)
+                .foregroundStyle(.secondary).tracking(1.2)
             content()
         }
         .padding(16)
