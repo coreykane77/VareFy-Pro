@@ -321,26 +321,33 @@ struct WorkOrderDetailView: View {
 
     private var chatFirstGate: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "message.fill")
-                    .foregroundStyle(Color.varefyProCyan)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Say hello first")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Text("Send the client a message before confirming.")
+            NavigationLink(value: NavRoute.chat(orderId)) {
+                HStack(spacing: 10) {
+                    Image(systemName: "message.fill")
+                        .foregroundStyle(Color.varefyProCyan)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Say hello first")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        Text("Tap to message the client before confirming.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.varefyProCyan.opacity(0.6))
                 }
-                Spacer()
+                .padding(14)
+                .background(Color.varefyProCyan.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.varefyProCyan.opacity(0.25), lineWidth: 1)
+                )
             }
-            .padding(14)
-            .background(Color.varefyProCyan.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(Color.varefyProCyan.opacity(0.25), lineWidth: 1)
-            )
+            .buttonStyle(.plain)
 
             HStack {
                 Image(systemName: "checkmark.circle.fill")
