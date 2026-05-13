@@ -19,7 +19,7 @@ struct CreateEstimateView: View {
     @FocusState private var focusedField: Field?
     enum Field { case title, description, hours, materials }
 
-    private let validityOptions = [14, 30, 45, 60]
+    private let validityOptions = [7, 14, 30, 60]
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
     private var hourlyRate: Double { order?.hourlyRate ?? 0 }
@@ -207,19 +207,20 @@ struct CreateEstimateView: View {
 
     private var validityCard: some View {
         sectionCard(title: "VALID FOR") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(spacing: 8) {
                 Picker("Valid for", selection: $validForDays) {
                     ForEach(validityOptions, id: \.self) { days in
                         Text("\(days) days").tag(days)
                     }
                 }
-                .pickerStyle(.segmented)
-                .tint(Color.varefyProCyan)
+                .pickerStyle(.wheel)
+                .frame(height: 120)
+                .clipped()
 
                 let expiresAt = Calendar.current.date(byAdding: .day, value: validForDays, to: Date()) ?? Date()
                 HStack(spacing: 6) {
                     Image(systemName: "clock.fill").font(.caption2).foregroundStyle(.secondary)
-                    Text("Client offer expires \(expiresAt.formatted(date: .abbreviated, time: .omitted))")
+                    Text("Offer expires \(expiresAt.formatted(date: .abbreviated, time: .omitted))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
