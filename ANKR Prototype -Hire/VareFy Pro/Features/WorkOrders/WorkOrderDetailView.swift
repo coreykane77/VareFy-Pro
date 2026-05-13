@@ -5,6 +5,7 @@ struct WorkOrderDetailView: View {
     let orderId: UUID
     @Environment(WorkOrderViewModel.self) private var workOrderVM
     @Environment(WalletViewModel.self) private var walletVM
+    @Environment(AuthManager.self) private var auth
     @State private var showMaterialsSheet = false
     @State private var showReportIssue = false
     @State private var proHasChatted: Bool = false
@@ -28,6 +29,10 @@ struct WorkOrderDetailView: View {
             } else {
                 errorState
             }
+        }
+        .refreshable {
+            guard let proId = auth.currentUserId else { return }
+            await workOrderVM.fetchWorkOrders(proId: proId)
         }
         .navigationTitle("Work Order")
         .navigationBarTitleDisplayMode(.inline)

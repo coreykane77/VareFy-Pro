@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkOrdersListView: View {
     @Environment(WorkOrderViewModel.self) private var workOrderVM
+    @Environment(AuthManager.self) private var auth
 
     private var sorted: [WorkOrder] {
         workOrderVM.workOrders.sorted {
@@ -30,6 +31,10 @@ struct WorkOrdersListView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 100)
             }
+        }
+        .refreshable {
+            guard let proId = auth.currentUserId else { return }
+            await workOrderVM.fetchWorkOrders(proId: proId)
         }
         .navigationTitle("Work Orders")
         .navigationBarTitleDisplayMode(.large)
