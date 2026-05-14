@@ -85,9 +85,11 @@ class WorkOrderViewModel {
     var unreadChatOrderIds: Set<UUID> = []
     var currentChatOrderId: UUID? = nil
     var sentEstimateOrderIds: Set<UUID> = []
+    var photoUploadError: String? = nil
 
     var hasUnreadChats: Bool { !unreadChatOrderIds.isEmpty }
 
+    private(set) var currentProId: UUID? = nil
     private var billingTask: Task<Void, Never>?
     private var radiusTask: Task<Void, Never>?
     private var realtimeChannel: RealtimeChannelV2?
@@ -99,6 +101,7 @@ class WorkOrderViewModel {
     // MARK: - Supabase Fetch
 
     func fetchWorkOrders(proId: UUID) async {
+        currentProId = proId
         isLoading = true
         do {
             let rows: [SupabaseWorkOrder] = try await supabase
@@ -234,6 +237,7 @@ class WorkOrderViewModel {
     func addPrePhoto(_ image: UIImage, for id: UUID, uploadedBy: UUID) async {
         guard let i = index(of: id),
               workOrders[i].prePhotoRecords.count < Constants.maxPhotosPerGate else { return }
+        photoUploadError = nil
         let tempId = UUID()
         workOrders[i].prePhotoRecords.append(
             PhotoRecord(id: tempId, storagePath: "", localImage: image, isUploading: true)
@@ -247,6 +251,7 @@ class WorkOrderViewModel {
             if let j = index(of: id), let k = workOrders[j].prePhotoRecords.firstIndex(where: { $0.id == tempId }) {
                 workOrders[j].prePhotoRecords.remove(at: k)
             }
+            photoUploadError = error.localizedDescription
             print("WorkOrderViewModel: pre photo upload failed — \(error)")
         }
     }
@@ -371,14 +376,18 @@ class WorkOrderViewModel {
 
     func addMaterialItem(description: String, amount: Double, for id: UUID) {
         guard let i = index(of: id) else { return }
-        workOrders[i].materialItems.append(MaterialLineItem(description: description, amount: amount))
+        let item = MaterialLineItem(description: description, amount: amount)
+        workOrders[i].materialItems.append(item)
+        Task { await persistMaterialItem(item, workOrderId: id) }
         Task { await persistMaterialsTotal(for: id) }
     }
 
     func removeMaterialItem(at itemIndex: Int, for id: UUID) {
         guard let i = index(of: id),
               itemIndex < workOrders[i].materialItems.count else { return }
+        let item = workOrders[i].materialItems[itemIndex]
         workOrders[i].materialItems.remove(at: itemIndex)
+        Task { await deleteMaterialItem(id: item.id) }
         Task { await persistMaterialsTotal(for: id) }
     }
 
@@ -386,6 +395,42 @@ class WorkOrderViewModel {
         guard let i = index(of: orderId),
               let j = workOrders[i].materialItems.firstIndex(where: { $0.id == materialId }) else { return }
         workOrders[i].materialItems[j].receiptPhoto = photo
+    }
+
+    private func persistMaterialItem(_ item: MaterialLineItem, workOrderId: UUID) async {
+        struct MaterialInsert: Encodable {
+            let id: UUID
+            let work_order_id: UUID
+            let description: String
+            let amount: Double
+            let added_by: UUID?
+        }
+        do {
+            try await supabase
+                .from("material_items")
+                .insert(MaterialInsert(
+                    id: item.id,
+                    work_order_id: workOrderId,
+                    description: item.description,
+                    amount: item.amount,
+                    added_by: currentProId
+                ))
+                .execute()
+        } catch {
+            print("WorkOrderViewModel: material item insert failed — \(error)")
+        }
+    }
+
+    private func deleteMaterialItem(id: UUID) async {
+        do {
+            try await supabase
+                .from("material_items")
+                .delete()
+                .eq("id", value: id)
+                .execute()
+        } catch {
+            print("WorkOrderViewModel: material item delete failed — \(error)")
+        }
     }
 
     private func persistMaterialsTotal(for id: UUID) async {
@@ -415,6 +460,7 @@ class WorkOrderViewModel {
     func addPostPhoto(_ image: UIImage, for id: UUID, uploadedBy: UUID) async {
         guard let i = index(of: id),
               workOrders[i].postPhotoRecords.count < Constants.maxPhotosPerGate else { return }
+        photoUploadError = nil
         let tempId = UUID()
         workOrders[i].postPhotoRecords.append(
             PhotoRecord(id: tempId, storagePath: "", localImage: image, isUploading: true)
@@ -428,6 +474,7 @@ class WorkOrderViewModel {
             if let j = index(of: id), let k = workOrders[j].postPhotoRecords.firstIndex(where: { $0.id == tempId }) {
                 workOrders[j].postPhotoRecords.remove(at: k)
             }
+            photoUploadError = error.localizedDescription
             print("WorkOrderViewModel: post photo upload failed — \(error)")
         }
     }

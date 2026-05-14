@@ -78,6 +78,14 @@ struct PreWorkPhotoView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
         .task { await workOrderVM.fetchPhotos(for: orderId) }
+        .alert("Photo Upload Failed", isPresented: Binding(
+            get: { workOrderVM.photoUploadError != nil },
+            set: { if !$0 { workOrderVM.photoUploadError = nil } }
+        )) {
+            Button("OK") { workOrderVM.photoUploadError = nil }
+        } message: {
+            Text(workOrderVM.photoUploadError ?? "")
+        }
         .sheet(isPresented: $showReportIssue) {
             ReportIssueSheet(orderId: orderId).environment(workOrderVM)
         }
