@@ -26,7 +26,7 @@ class ChatViewModel {
         guard client == nil else { return }
 
         var config = ChatClientConfig(apiKeyString: apiKey)
-        config.isLocalStorageEnabled = true
+        config.isLocalStorageEnabled = false
         let newClient = ChatClient(config: config)
 
         do {
