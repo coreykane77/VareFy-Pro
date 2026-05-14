@@ -1,0 +1,162 @@
+import SwiftUI
+import UIKit
+
+// MARK: - Full-screen swipeable photo viewer (pro app)
+// Handles PhotoRecord — shows localImage immediately after capture,
+// falls back to signedURL for persisted photos.
+// Pinch to zoom, double-tap to toggle 2.5x, swipe between photos.
+
+struct ProPhotoViewer: View {
+    let records: [PhotoRecord]
+    @State var currentIndex: Int
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            TabView(selection: $currentIndex) {
+                ForEach(Array(records.enumerated()), id: \.offset) { i, record in
+                    ZoomablePhotoRecord(record: record)
+                        .tag(i)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: records.count > 1 ? .always : .never))
+            .ignoresSafeArea()
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white)
+                    .padding(20)
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Per-record view: local UIImage or async signed URL
+
+private struct ZoomablePhotoRecord: View {
+    let record: PhotoRecord
+    @State private var loadedImage: UIImage? = nil
+    @State private var isLoading = false
+
+    var body: some View {
+        Group {
+            if let image = loadedImage ?? record.localImage {
+                ZoomableImageView(image: image)
+            } else if isLoading {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "photo")
+                    .font(.largeTitle).foregroundStyle(.gray)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            guard record.localImage == nil, loadedImage == nil, let url = record.signedURL else { return }
+            isLoading = true
+            if let (data, _) = try? await URLSession.shared.data(from: url),
+               let img = UIImage(data: data) {
+                loadedImage = img
+            }
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - UIScrollView wrapper (shared logic — identical to client app)
+
+struct ZoomableImageView: UIViewRepresentable {
+    let image: UIImage
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 4
+        scrollView.bouncesZoom = true
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentInsetAdjustmentBehavior = .never
+
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = true
+        scrollView.addSubview(imageView)
+        context.coordinator.imageView = imageView
+
+        let doubleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleTap(_:))
+        )
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+        context.coordinator.scrollView = scrollView
+
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        DispatchQueue.main.async {
+            guard let imageView = context.coordinator.imageView else { return }
+            imageView.image = image
+            context.coordinator.fitImage(in: scrollView)
+        }
+    }
+
+    class Coordinator: NSObject, UIScrollViewDelegate {
+        weak var scrollView: UIScrollView?
+        weak var imageView: UIImageView?
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            centerContent(in: scrollView)
+        }
+
+        func fitImage(in scrollView: UIScrollView) {
+            guard let imageView, let image = imageView.image else { return }
+            let bounds = scrollView.bounds
+            guard bounds.width > 0, bounds.height > 0,
+                  image.size.width > 0, image.size.height > 0 else { return }
+            let scaleW = bounds.width  / image.size.width
+            let scaleH = bounds.height / image.size.height
+            let fit    = min(scaleW, scaleH)
+            imageView.frame = CGRect(origin: .zero, size: CGSize(
+                width:  image.size.width  * fit,
+                height: image.size.height * fit
+            ))
+            scrollView.contentSize = imageView.frame.size
+            scrollView.zoomScale = 1
+            centerContent(in: scrollView)
+        }
+
+        func centerContent(in scrollView: UIScrollView) {
+            guard let imageView else { return }
+            let offsetX = max((scrollView.bounds.width  - imageView.frame.width)  / 2, 0)
+            let offsetY = max((scrollView.bounds.height - imageView.frame.height) / 2, 0)
+            imageView.frame.origin = CGPoint(x: offsetX, y: offsetY)
+        }
+
+        @objc func handleDoubleTap(_ tap: UITapGestureRecognizer) {
+            guard let scrollView else { return }
+            if scrollView.zoomScale > 1 {
+                scrollView.setZoomScale(1, animated: true)
+            } else {
+                let point  = tap.location(in: imageView)
+                let size   = CGSize(
+                    width:  scrollView.bounds.width  / 2.5,
+                    height: scrollView.bounds.height / 2.5
+                )
+                let origin = CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2)
+                scrollView.zoom(to: CGRect(origin: origin, size: size), animated: true)
+            }
+        }
+    }
+}

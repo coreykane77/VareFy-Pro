@@ -9,6 +9,8 @@ struct PreWorkPhotoView: View {
     @State private var showImagePicker = false
     @State private var navigateToBilling = false
     @State private var showReportIssue = false
+    @State private var photoViewerIndex: Int = 0
+    @State private var showPhotoViewer = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
     private var canStart: Bool { workOrderVM.canStartWork(for: orderId) }
@@ -137,8 +139,8 @@ struct PreWorkPhotoView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(order.prePhotoRecords) { record in
-                        photoThumb(record: record) {
+                    ForEach(Array(order.prePhotoRecords.enumerated()), id: \.element.id) { i, record in
+                        photoThumb(record: record, index: i, records: order.prePhotoRecords) {
                             Task { await workOrderVM.removePrePhoto(record: record, for: orderId) }
                         }
                     }
@@ -151,7 +153,7 @@ struct PreWorkPhotoView: View {
     }
 
     @ViewBuilder
-    private func photoThumb(record: PhotoRecord, onDelete: @escaping () -> Void) -> some View {
+    private func photoThumb(record: PhotoRecord, index: Int, records: [PhotoRecord], onDelete: @escaping () -> Void) -> some View {
         ZStack(alignment: .topTrailing) {
             ZStack {
                 if let image = record.localImage {
@@ -175,6 +177,11 @@ struct PreWorkPhotoView: View {
             }
             .frame(width: 90, height: 90)
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .onTapGesture {
+                guard !record.isUploading else { return }
+                photoViewerIndex = index
+                showPhotoViewer  = true
+            }
 
             if !record.isUploading {
                 Button(action: {
@@ -188,6 +195,9 @@ struct PreWorkPhotoView: View {
                         .padding(4)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showPhotoViewer) {
+            ProPhotoViewer(records: records, currentIndex: photoViewerIndex)
         }
     }
 

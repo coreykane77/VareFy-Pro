@@ -11,6 +11,9 @@ struct WorkOrderDetailView: View {
     @State private var showReportIssue = false
     @State private var proHasChatted: Bool = false
     @State private var didAutoNavigate = false
+    @State private var photoViewerRecords: [PhotoRecord] = []
+    @State private var photoViewerIndex: Int = 0
+    @State private var showPhotoViewer = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
 
@@ -23,6 +26,7 @@ struct WorkOrderDetailView: View {
                     VStack(spacing: 20) {
                         headerSection(order)
                         detailSection(order)
+                        photoHistorySection(order)
                         actionSection(order)
                     }
                     .padding(16)
@@ -32,9 +36,16 @@ struct WorkOrderDetailView: View {
                 errorState
             }
         }
+        .task(id: orderId) {
+            await workOrderVM.fetchPhotos(for: orderId)
+        }
+        .fullScreenCover(isPresented: $showPhotoViewer) {
+            ProPhotoViewer(records: photoViewerRecords, currentIndex: photoViewerIndex)
+        }
         .refreshable {
             guard let proId = auth.currentUserId else { return }
             await workOrderVM.fetchWorkOrders(proId: proId)
+            await workOrderVM.fetchPhotos(for: orderId)
         }
         .navigationTitle("Work Order")
         .navigationBarTitleDisplayMode(.inline)
@@ -133,6 +144,66 @@ struct WorkOrderDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func photoHistorySection(_ order: WorkOrder) -> some View {
+        let allRecords = order.prePhotoRecords + order.postPhotoRecords
+        if !allRecords.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("PHOTO RECORD")
+                    .font(.caption).fontWeight(.semibold)
+                    .foregroundStyle(.secondary).tracking(1)
+
+                if !order.prePhotoRecords.isEmpty {
+                    Text("Before")
+                        .font(.caption).foregroundStyle(.secondary)
+                    photoHistoryStrip(records: order.prePhotoRecords, allRecords: allRecords)
+                }
+
+                if !order.postPhotoRecords.isEmpty {
+                    Text("After")
+                        .font(.caption).foregroundStyle(.secondary)
+                    photoHistoryStrip(records: order.postPhotoRecords, allRecords: allRecords)
+                }
+            }
+            .padding(16)
+            .background(Color.appCard)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func photoHistoryStrip(records: [PhotoRecord], allRecords: [PhotoRecord]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(records.enumerated()), id: \.element.id) { i, record in
+                    Button {
+                        photoViewerRecords = allRecords
+                        photoViewerIndex   = allRecords.firstIndex(where: { $0.id == record.id }) ?? i
+                        showPhotoViewer    = true
+                    } label: {
+                        ZStack {
+                            if let img = record.localImage {
+                                Image(uiImage: img).resizable().scaledToFill()
+                            } else if let url = record.signedURL {
+                                AsyncImage(url: url) { phase in
+                                    if case .success(let img) = phase {
+                                        img.resizable().scaledToFill()
+                                    } else {
+                                        Color.appBackground
+                                    }
+                                }
+                            } else {
+                                Color.appBackground
+                            }
+                        }
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     /// True when a *different* order is currently in an active work state.
