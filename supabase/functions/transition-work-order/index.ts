@@ -138,6 +138,7 @@ serve(async (req) => {
       update.total_paid = laborTotal + materialsTotal;
       update.completed_at = now;
       update.payout_status = "pending";
+      update.review_deadline = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 
     } else if (new_status === "pre_work") {
       update.paused_return_status = null;
