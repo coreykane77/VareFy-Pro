@@ -54,9 +54,9 @@ struct CreateEstimateView: View {
                     .padding(.bottom, 20)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .safeAreaInset(edge: .bottom) {
-                    bottomBar
-                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                bottomBar
             }
             .navigationTitle("Create Estimate")
             .navigationBarTitleDisplayMode(.inline)
