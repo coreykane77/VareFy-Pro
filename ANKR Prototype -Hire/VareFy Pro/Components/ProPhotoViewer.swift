@@ -1,11 +1,6 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Full-screen swipeable photo viewer (pro app)
-// Handles PhotoRecord — shows localImage immediately after capture,
-// falls back to signedURL for persisted photos.
-// Pinch to zoom, double-tap to toggle 2.5x, swipe between photos.
-
 struct ProPhotoViewer: View {
     let records: [PhotoRecord]
     @State var currentIndex: Int
@@ -36,7 +31,7 @@ struct ProPhotoViewer: View {
     }
 }
 
-// MARK: - Per-record view: local UIImage or async signed URL
+// MARK: - Per-record view
 
 private struct ZoomablePhotoRecord: View {
     let record: PhotoRecord
@@ -44,17 +39,20 @@ private struct ZoomablePhotoRecord: View {
     @State private var isLoading = false
 
     var body: some View {
-        Group {
+        GeometryReader { geo in
             if let image = loadedImage ?? record.localImage {
-                ZoomableImageView(image: image)
+                ZoomableImageView(image: image, size: geo.size)
             } else if isLoading {
-                ProgressView().tint(.white)
+                ProgressView()
+                    .tint(.white)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
             } else {
                 Image(systemName: "photo")
-                    .font(.largeTitle).foregroundStyle(.gray)
+                    .font(.largeTitle)
+                    .foregroundStyle(.gray)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             guard record.localImage == nil, loadedImage == nil, let url = record.signedURL else { return }
             isLoading = true
@@ -67,16 +65,18 @@ private struct ZoomablePhotoRecord: View {
     }
 }
 
-// MARK: - UIScrollView wrapper: pinch-to-zoom, pan, double-tap, correct first-frame layout
+// MARK: - UIScrollView zoom wrapper
+// size comes from GeometryReader — always valid before updateUIView fires,
+// regardless of fullScreenCover animation state.
 
 struct ZoomableImageView: UIViewRepresentable {
     let image: UIImage
+    let size: CGSize
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> ZoomScrollView {
-        let scrollView = ZoomScrollView()
-        scrollView.coordinator = context.coordinator
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
         scrollView.delegate = context.coordinator
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 4
@@ -103,33 +103,17 @@ struct ZoomableImageView: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: ZoomScrollView, context: Context) {
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
         guard let imageView = context.coordinator.imageView else { return }
         imageView.image = image
-        scrollView.markNeedsFit()
-    }
-
-    // Custom UIScrollView that triggers fitImage when it first gets real bounds.
-    // Fixes the black first-page bug where updateUIView fires before layout completes.
-    final class ZoomScrollView: UIScrollView {
-        weak var coordinator: Coordinator?
-        private var fittedBounds: CGRect = .zero
-
-        func markNeedsFit() { fittedBounds = .zero }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            guard bounds != fittedBounds,
-                  bounds.width > 0, bounds.height > 0,
-                  zoomScale == minimumZoomScale else { return }
-            fittedBounds = bounds
-            coordinator?.fitImage(in: self)
-        }
+        context.coordinator.fitIfNeeded(in: scrollView, image: image, size: size)
     }
 
     class Coordinator: NSObject, UIScrollViewDelegate {
-        weak var scrollView: ZoomScrollView?
+        weak var scrollView: UIScrollView?
         weak var imageView: UIImageView?
+        private var fittedImage: UIImage?
+        private var fittedSize: CGSize = .zero
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
@@ -137,15 +121,21 @@ struct ZoomableImageView: UIViewRepresentable {
             centerContent(in: scrollView)
         }
 
-        func fitImage(in scrollView: UIScrollView) {
-            guard let imageView, let image = imageView.image else { return }
-            let bounds = scrollView.bounds
-            guard bounds.width > 0, bounds.height > 0,
-                  image.size.width > 0, image.size.height > 0 else { return }
-            let fit = min(bounds.width / image.size.width, bounds.height / image.size.height)
+        func fitIfNeeded(in scrollView: UIScrollView, image: UIImage, size: CGSize) {
+            guard size.width > 0, size.height > 0 else { return }
+            guard image !== fittedImage || size != fittedSize else { return }
+            fittedImage = image
+            fittedSize = size
+            fit(in: scrollView, size: size)
+        }
+
+        private func fit(in scrollView: UIScrollView, size: CGSize) {
+            guard let imageView, let img = imageView.image,
+                  img.size.width > 0, img.size.height > 0 else { return }
+            let scale = min(size.width / img.size.width, size.height / img.size.height)
             imageView.frame = CGRect(origin: .zero, size: CGSize(
-                width:  image.size.width  * fit,
-                height: image.size.height * fit
+                width:  img.size.width  * scale,
+                height: img.size.height * scale
             ))
             scrollView.contentSize = imageView.frame.size
             scrollView.zoomScale = 1
@@ -154,8 +144,9 @@ struct ZoomableImageView: UIViewRepresentable {
 
         func centerContent(in scrollView: UIScrollView) {
             guard let imageView else { return }
-            let offsetX = max((scrollView.bounds.width  - imageView.frame.width)  / 2, 0)
-            let offsetY = max((scrollView.bounds.height - imageView.frame.height) / 2, 0)
+            let b = scrollView.bounds
+            let offsetX = max((b.width  - imageView.frame.width)  / 2, 0)
+            let offsetY = max((b.height - imageView.frame.height) / 2, 0)
             imageView.frame.origin = CGPoint(x: offsetX, y: offsetY)
         }
 
