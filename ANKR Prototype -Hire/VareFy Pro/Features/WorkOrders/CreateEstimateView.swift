@@ -31,6 +31,7 @@ struct CreateEstimateView: View {
     private var canSend: Bool {
         !estimateTitle.trimmingCharacters(in: .whitespaces).isEmpty &&
         estimatedHours > 0 &&
+        !estimatedMaterialsText.trimmingCharacters(in: .whitespaces).isEmpty &&
         (startImmediately || proposedStartDate > Date())
     }
 
@@ -39,22 +40,21 @@ struct CreateEstimateView: View {
             ZStack {
                 Color.appBackground.ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            contextBanner
-                            titleCard
-                            scopeCard
-                            totalCard
-                            scheduleCard
-                            validityCard
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 20)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        contextBanner
+                        titleCard
+                        scopeCard
+                        totalCard
+                        scheduleCard
+                        validityCard
                     }
-                    .scrollDismissesKeyboard(.interactively)
-
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom) {
                     bottomBar
                 }
             }

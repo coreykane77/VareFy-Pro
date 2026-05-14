@@ -10,6 +10,7 @@ struct PreWorkPhotoView: View {
     @State private var navigateToBilling = false
     @State private var showReportIssue = false
     @State private var photoViewerIndex: Int = 0
+    @State private var photoViewerRecords: [PhotoRecord] = []
     @State private var showPhotoViewer = false
 
     private var order: WorkOrder? { workOrderVM.order(id: orderId) }
@@ -105,6 +106,9 @@ struct PreWorkPhotoView: View {
                 }
             ))
         }
+        .fullScreenCover(isPresented: $showPhotoViewer) {
+            ProPhotoViewer(records: photoViewerRecords, currentIndex: photoViewerIndex)
+        }
     }
 
     @ViewBuilder
@@ -179,8 +183,9 @@ struct PreWorkPhotoView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .onTapGesture {
                 guard !record.isUploading else { return }
-                photoViewerIndex = index
-                showPhotoViewer  = true
+                photoViewerRecords = records
+                photoViewerIndex   = index
+                showPhotoViewer    = true
             }
 
             if !record.isUploading {
@@ -195,9 +200,6 @@ struct PreWorkPhotoView: View {
                         .padding(4)
                 }
             }
-        }
-        .fullScreenCover(isPresented: $showPhotoViewer) {
-            ProPhotoViewer(records: records, currentIndex: photoViewerIndex)
         }
     }
 

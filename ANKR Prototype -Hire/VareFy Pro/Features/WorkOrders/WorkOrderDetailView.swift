@@ -124,26 +124,43 @@ struct WorkOrderDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
 
-        // Materials line item — tappable worksheet
-        Button { showMaterialsSheet = true } label: {
+        // Materials line item — only editable while job is active
+        let editableStatuses: Set<WorkOrderStatus> = [.activeBilling, .paused, .postWork]
+        if editableStatuses.contains(order.status) {
+            Button { showMaterialsSheet = true } label: {
+                HStack {
+                    Text("Materials & Supplies")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(order.materialsTotal > 0 ? order.materialsTotal.formattedAsCurrency() : "Add")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.varefyProCyan)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(16)
+                .background(Color.appCard)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+        } else if order.materialsTotal > 0 {
             HStack {
                 Text("Materials & Supplies")
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                 Spacer()
-                Text(order.materialsTotal > 0 ? order.materialsTotal.formattedAsCurrency() : "Add")
+                Text(order.materialsTotal.formattedAsCurrency())
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color.varefyProCyan)
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             .padding(16)
             .background(Color.appCard)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder

@@ -67,15 +67,16 @@ private struct ZoomablePhotoRecord: View {
     }
 }
 
-// MARK: - UIScrollView wrapper (shared logic — identical to client app)
+// MARK: - UIScrollView wrapper: pinch-to-zoom, pan, double-tap, correct first-frame layout
 
 struct ZoomableImageView: UIViewRepresentable {
     let image: UIImage
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+    func makeUIView(context: Context) -> ZoomScrollView {
+        let scrollView = ZoomScrollView()
+        scrollView.coordinator = context.coordinator
         scrollView.delegate = context.coordinator
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 4
@@ -102,16 +103,32 @@ struct ZoomableImageView: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {
-        DispatchQueue.main.async {
-            guard let imageView = context.coordinator.imageView else { return }
-            imageView.image = image
-            context.coordinator.fitImage(in: scrollView)
+    func updateUIView(_ scrollView: ZoomScrollView, context: Context) {
+        guard let imageView = context.coordinator.imageView else { return }
+        imageView.image = image
+        scrollView.markNeedsFit()
+    }
+
+    // Custom UIScrollView that triggers fitImage when it first gets real bounds.
+    // Fixes the black first-page bug where updateUIView fires before layout completes.
+    final class ZoomScrollView: UIScrollView {
+        weak var coordinator: Coordinator?
+        private var fittedBounds: CGRect = .zero
+
+        func markNeedsFit() { fittedBounds = .zero }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds != fittedBounds,
+                  bounds.width > 0, bounds.height > 0,
+                  zoomScale == minimumZoomScale else { return }
+            fittedBounds = bounds
+            coordinator?.fitImage(in: self)
         }
     }
 
     class Coordinator: NSObject, UIScrollViewDelegate {
-        weak var scrollView: UIScrollView?
+        weak var scrollView: ZoomScrollView?
         weak var imageView: UIImageView?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
@@ -125,9 +142,7 @@ struct ZoomableImageView: UIViewRepresentable {
             let bounds = scrollView.bounds
             guard bounds.width > 0, bounds.height > 0,
                   image.size.width > 0, image.size.height > 0 else { return }
-            let scaleW = bounds.width  / image.size.width
-            let scaleH = bounds.height / image.size.height
-            let fit    = min(scaleW, scaleH)
+            let fit = min(bounds.width / image.size.width, bounds.height / image.size.height)
             imageView.frame = CGRect(origin: .zero, size: CGSize(
                 width:  image.size.width  * fit,
                 height: image.size.height * fit
