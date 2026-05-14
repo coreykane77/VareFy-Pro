@@ -86,6 +86,7 @@ struct ServiceGroupDetailView: View {
         .navigationTitle(group.groupName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .doneKeyboardToolbar()
         .popButton()
         .onAppear { loadState() }
     }

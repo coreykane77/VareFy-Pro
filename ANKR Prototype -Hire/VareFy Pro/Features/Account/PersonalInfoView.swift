@@ -71,6 +71,7 @@ struct PersonalInfoView: View {
         .navigationTitle("Personal Info")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .doneKeyboardToolbar()
         .popButton()
     }
 

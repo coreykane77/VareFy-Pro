@@ -23,6 +23,7 @@ struct VehicleView: View {
         .navigationTitle("Vehicle")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .doneKeyboardToolbar()
         .popButton()
         .confirmationDialog("Vehicle Photo", isPresented: $showPhotoOptions) {
             Button("Add Sample Photo") {

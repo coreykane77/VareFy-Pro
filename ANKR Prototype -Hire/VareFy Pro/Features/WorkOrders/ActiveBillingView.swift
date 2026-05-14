@@ -208,6 +208,7 @@ struct ActiveBillingView: View {
                 }
             }
         }
+        .doneKeyboardToolbar()
         .sheet(isPresented: $showReportIssue) {
             ReportIssueSheet(orderId: orderId)
                 .environment(workOrderVM)

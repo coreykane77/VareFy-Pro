@@ -67,6 +67,22 @@ struct BOSSBadge: View {
     }
 }
 
+extension View {
+    func doneKeyboardToolbar() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+            }
+        }
+    }
+}
+
 extension Date {
     func formattedAsTime() -> String {
         let formatter = DateFormatter()

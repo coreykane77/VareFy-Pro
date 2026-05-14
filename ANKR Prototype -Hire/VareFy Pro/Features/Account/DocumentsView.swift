@@ -41,6 +41,7 @@ struct DocumentsView: View {
         .navigationTitle("Documents")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
+        .doneKeyboardToolbar()
         .popButton()
         .sheet(item: $editingCategory) { cat in
             DocumentEditSheet(category: cat)
