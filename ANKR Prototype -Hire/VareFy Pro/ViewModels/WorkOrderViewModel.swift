@@ -108,7 +108,21 @@ class WorkOrderViewModel {
                 .order("scheduled_at")
                 .execute()
                 .value
-            workOrders = rows.map { $0.toWorkOrder() }
+
+            // Preserve in-flight photo records and local material items across realtime refreshes.
+            // toWorkOrder() initialises these as empty; without this, a realtime update wipes
+            // any photos the pro just uploaded before the gate check runs.
+            let existing = workOrders
+            workOrders = rows.map { row in
+                var order = row.toWorkOrder()
+                if let prev = existing.first(where: { $0.id == row.id }) {
+                    order.prePhotoRecords  = prev.prePhotoRecords
+                    order.postPhotoRecords = prev.postPhotoRecords
+                    order.materialItems    = prev.materialItems
+                    order.timelineEvents   = prev.timelineEvents
+                }
+                return order
+            }
 
             // Restart billing display timer for any order already in active_billing
             if let active = workOrders.first(where: { $0.status == .activeBilling && $0.billingStartTime != nil }) {
@@ -353,23 +367,39 @@ class WorkOrderViewModel {
         sentEstimateOrderIds.insert(orderId)
     }
 
-    // MARK: - Materials (local until Phase 7 photo upload)
+    // MARK: - Materials
 
     func addMaterialItem(description: String, amount: Double, for id: UUID) {
         guard let i = index(of: id) else { return }
         workOrders[i].materialItems.append(MaterialLineItem(description: description, amount: amount))
+        Task { await persistMaterialsTotal(for: id) }
     }
 
     func removeMaterialItem(at itemIndex: Int, for id: UUID) {
         guard let i = index(of: id),
               itemIndex < workOrders[i].materialItems.count else { return }
         workOrders[i].materialItems.remove(at: itemIndex)
+        Task { await persistMaterialsTotal(for: id) }
     }
 
     func setReceiptPhoto(_ photo: UIImage, for materialId: UUID, orderId: UUID) {
         guard let i = index(of: orderId),
               let j = workOrders[i].materialItems.firstIndex(where: { $0.id == materialId }) else { return }
         workOrders[i].materialItems[j].receiptPhoto = photo
+    }
+
+    private func persistMaterialsTotal(for id: UUID) async {
+        guard let order = order(id: id) else { return }
+        let total = order.materialItems.reduce(0.0) { $0 + $1.amount }
+        do {
+            try await supabase
+                .from("work_orders")
+                .update(["materials_total": total])
+                .eq("id", value: id.uuidString)
+                .execute()
+        } catch {
+            print("WorkOrderViewModel: materials total update failed — \(error)")
+        }
     }
 
     // MARK: - Post Work
