@@ -108,7 +108,9 @@ class ChatViewModel {
                 isLoading = false
                 return
             }
-            messages = Array(channelController?.messages ?? []).reversed()
+            messages = Array(channelController?.messages ?? [])
+                .filter { $0.type == .regular }
+                .reversed()
         } catch {
             errorMessage = "Couldn't load chat: \(error.localizedDescription)"
         }
@@ -141,7 +143,9 @@ private class DelegateProxy: NSObject, ChatChannelControllerDelegate {
         _ channelController: ChatChannelController,
         didUpdateMessages changes: [ListChange<ChatMessage>]
     ) {
-        owner?.messages = Array(channelController.messages).reversed()
+        owner?.messages = Array(channelController.messages)
+            .filter { $0.type == .regular }
+            .reversed()
     }
 
     func controller(_ controller: DataController, didChangeState state: DataController.State) {}
