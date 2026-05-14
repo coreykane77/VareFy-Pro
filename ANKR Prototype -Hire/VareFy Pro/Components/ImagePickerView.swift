@@ -8,8 +8,12 @@ struct ImagePickerView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
+        #if targetEnvironment(simulator)
+        picker.sourceType = .photoLibrary
+        #else
         picker.sourceType = UIImagePickerController.isSourceTypeAvailable(sourceType)
             ? sourceType : .photoLibrary
+        #endif
         picker.delegate = context.coordinator
         return picker
     }
