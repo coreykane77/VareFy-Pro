@@ -143,9 +143,9 @@ struct PreWorkPhotoView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(order.prePhotoRecords.enumerated()), id: \.element.id) { i, record in
-                        photoThumb(record: record, index: i, records: order.prePhotoRecords) {
-                            Task { await workOrderVM.removePrePhoto(record: record, for: orderId) }
+                    ForEach(Array(order.prePhotoRecords.enumerated().reversed()), id: \.element.id) { pair in
+                        photoThumb(record: pair.element, index: pair.offset, records: order.prePhotoRecords) {
+                            Task { await workOrderVM.removePrePhoto(record: pair.element, for: orderId) }
                         }
                     }
                     if order.prePhotoCount < Constants.maxPhotosPerGate {
