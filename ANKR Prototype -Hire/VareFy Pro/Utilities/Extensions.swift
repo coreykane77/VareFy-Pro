@@ -85,9 +85,18 @@ extension View {
 
 extension Date {
     func formattedAsTime() -> String {
+        let cal = Calendar.current
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        return formatter.string(from: self)
+        if cal.isDateInToday(self) {
+            return "Today · " + formatter.string(from: self)
+        } else if cal.isDateInTomorrow(self) {
+            return "Tomorrow · " + formatter.string(from: self)
+        } else {
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return formatter.string(from: self)
+        }
     }
 
     func formattedAsDate() -> String {
