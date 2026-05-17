@@ -43,8 +43,8 @@ async function ensureStreamChannel(proId: string, clientId: string, workOrderId:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        data:    { created_by_id: proId },
-        members: [{ user_id: proId }, { user_id: clientId }],
+        data:        { created_by_id: proId },
+        add_members: [{ user_id: proId }, { user_id: clientId }],
       }),
     }
   );
