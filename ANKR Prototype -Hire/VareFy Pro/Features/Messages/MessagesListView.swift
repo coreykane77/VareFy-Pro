@@ -1,4 +1,5 @@
 import SwiftUI
+import StreamChat
 
 // MARK: - Models
 
@@ -29,36 +30,40 @@ struct InboxItem: Identifiable {
 
 // MARK: - View
 
+private struct ChannelState {
+    var unread: Bool = false
+    var preview: String = ""
+    var time: Date = .distantPast
+}
+
 struct MessagesListView: View {
     @Environment(WorkOrderViewModel.self) private var workOrderVM
+    @Environment(AuthManager.self) private var authManager
     @State private var selectedCategory: InboxCategory = .all
     @State private var selectedItem: InboxItem? = nil
+    @State private var channelStates: [UUID: ChannelState] = [:]
 
     private var allItems: [InboxItem] {
-        let orders = workOrderVM.workOrders
         var items: [InboxItem] = []
 
-        // Client threads — 2 work orders, different previews
-        if orders.count > 0 {
-            items.append(.init(
-                type: .client(orderId: orders[0].id),
-                sender: orders[0].clientName,
-                subject: orders[0].serviceTitle,
-                preview: "Great! No rush, take your time.",
-                time: "9m ago",
-                isUnread: workOrderVM.unreadChatOrderIds.contains(orders[0].id),
-                avatarIcon: nil,
-                avatarColor: Color.varefyProCyan
-            ))
+        // One thread per assigned work order — sorted newest first
+        let orders = workOrderVM.workOrders.sorted {
+            let aTime = channelStates[$0.id]?.time ?? $0.scheduledTime
+            let bTime = channelStates[$1.id]?.time ?? $1.scheduledTime
+            return aTime > bTime
         }
-        if orders.count > 1 {
+        for order in orders {
+            let state = channelStates[order.id]
+            let isUnread = state?.unread ?? workOrderVM.unreadChatOrderIds.contains(order.id)
+            let preview = state?.preview ?? "Tap to open chat"
+            let time = state?.time.inboxTimeString ?? order.scheduledTime.inboxTimeString
             items.append(.init(
-                type: .client(orderId: orders[1].id),
-                sender: orders[1].clientName,
-                subject: orders[1].serviceTitle,
-                preview: "Can you bring your own supplies? I have some here too.",
-                time: "2h ago",
-                isUnread: workOrderVM.unreadChatOrderIds.contains(orders[1].id),
+                type: .client(orderId: order.id),
+                sender: order.clientName,
+                subject: order.serviceTitle,
+                preview: preview,
+                time: time,
+                isUnread: isUnread,
                 avatarIcon: nil,
                 avatarColor: Color.varefyProCyan
             ))
@@ -165,8 +170,31 @@ struct MessagesListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.appNavBar, for: .navigationBar)
         .popButton()
+        .task { await loadChannelStates() }
         .sheet(item: $selectedItem) { item in
             InboxDetailSheet(item: item)
+        }
+    }
+
+    // MARK: - Stream Channel State
+
+    private func loadChannelStates() async {
+        guard let client = ChatViewModel.client else { return }
+        for order in workOrderVM.workOrders {
+            let channelId = ChannelId(type: .messaging, id: "work_order_\(order.id.uuidString.lowercased())")
+            guard let controller = try? client.channelController(for: channelId) else { continue }
+            let _: Error? = await withCheckedContinuation { cont in
+                controller.synchronize { cont.resume(returning: $0) }
+            }
+            let unread = (controller.channel?.unreadCount.messages ?? 0) > 0
+            let lastMsg = Array(controller.messages).filter { $0.type == .regular }.first
+            let state = ChannelState(
+                unread: unread,
+                preview: lastMsg?.text ?? "",
+                time: lastMsg?.createdAt ?? order.scheduledTime
+            )
+            channelStates[order.id] = state
+            if unread { workOrderVM.markChatUnread(for: order.id) }
         }
     }
 

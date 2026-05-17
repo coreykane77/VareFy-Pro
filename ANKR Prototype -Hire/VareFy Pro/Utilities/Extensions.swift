@@ -104,4 +104,12 @@ extension Date {
         formatter.dateStyle = .medium
         return formatter.string(from: self)
     }
+
+    var inboxTimeString: String {
+        let diff = Date().timeIntervalSince(self)
+        if diff < 3600     { return "\(max(1, Int(diff / 60)))m ago" }
+        if diff < 86400    { return "\(Int(diff / 3600))h ago" }
+        if diff < 86400*2  { return "Yesterday" }
+        return "\(Int(diff / 86400))d ago"
+    }
 }
