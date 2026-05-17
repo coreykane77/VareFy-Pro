@@ -129,6 +129,13 @@ class ChatViewModel {
             return
         }
 
+        // If channel has no members, Edge Functions haven't run yet — don't allow sending
+        if channelController?.channel?.memberCount == 0 {
+            print("ChatViewModel: \(channelId.id) exists but has no members — waiting for job confirmation")
+            errorMessage = "Chat opens once the job is confirmed."
+            return
+        }
+
         let loaded = Array(
             Array(channelController?.messages ?? [])
                 .filter { $0.type == .regular }
