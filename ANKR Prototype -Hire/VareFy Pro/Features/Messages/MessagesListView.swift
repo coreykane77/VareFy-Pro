@@ -183,7 +183,7 @@ struct MessagesListView: View {
         var controllers: [ChatChannelController] = []
         for order in workOrderVM.workOrders {
             let channelId = ChannelId(type: .messaging, id: "work_order_\(order.id.uuidString.lowercased())")
-            guard let controller = try? client.channelController(for: channelId) else { continue }
+            let controller = client.channelController(for: channelId)
             controllers.append(controller)
             let _: Error? = await withCheckedContinuation { cont in
                 controller.synchronize { cont.resume(returning: $0) }

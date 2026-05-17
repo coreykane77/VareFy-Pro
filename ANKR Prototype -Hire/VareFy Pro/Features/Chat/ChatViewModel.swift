@@ -67,7 +67,7 @@ class ChatViewModel {
             sort: [.init(key: .lastMessageAt, isAscending: false)],
             pageSize: 50
         )
-        guard let controller = try? client.channelListController(query: query) else { return }
+        let controller = client.channelListController(query: query)
         let delegate = InboxDelegateProxy(onUpdate: onChannelUpdate)
         inboxDelegate = delegate
         controller.delegate = delegate
@@ -84,16 +84,12 @@ class ChatViewModel {
             type: .messaging,
             id: "work_order_\(workOrderId.uuidString.lowercased())"
         )
-        do {
-            let controller = try client.channelController(for: channelId)
-            let syncError: Error? = await withCheckedContinuation { cont in
-                controller.synchronize { cont.resume(returning: $0) }
-            }
-            guard syncError == nil else { return false }
-            return controller.messages.contains { $0.author.id == currentUserId }
-        } catch {
-            return false
+        let controller = client.channelController(for: channelId)
+        let syncError: Error? = await withCheckedContinuation { cont in
+            controller.synchronize { cont.resume(returning: $0) }
         }
+        guard syncError == nil else { return false }
+        return controller.messages.contains { $0.author.id == currentUserId }
     }
 
     // MARK: - Channel
