@@ -394,7 +394,6 @@ class WorkOrderViewModel {
         }
 
         let iso = ISO8601DateFormatter()
-        print("WorkOrderVM: createEstimate calling function for order \(orderId)")
         let response: CreateEstimateResponse = try await supabase.functions
             .invoke("create-estimate", options: FunctionInvokeOptions(
                 body: Body(
@@ -407,7 +406,6 @@ class WorkOrderViewModel {
                     proposed_start_date: iso.string(from: proposedStartDate)
                 )
             ))
-        print("WorkOrderVM: createEstimate response — success:\(response.success) error:\(response.error ?? "nil")")
         if let errMsg = response.error {
             throw NSError(domain: "VareFy", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: errMsg])
