@@ -369,20 +369,34 @@ struct WorkOrderDetailView: View {
             }
 
             // Secondary actions row
-            NavigationLink(value: NavRoute.chat(orderId)) {
+            if order.isChatAvailable {
+                NavigationLink(value: NavRoute.chat(orderId)) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "message.fill")
+                        Text("Chat")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.appCard)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.highlightRow)
+            } else {
                 HStack(spacing: 6) {
-                    Image(systemName: "message.fill")
-                    Text("Chat")
+                    Image(systemName: "lock.fill")
+                    Text("Chat Closed")
                 }
                 .font(.subheadline)
                 .fontWeight(.medium)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.appCard)
+                .background(Color.appCard.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .buttonStyle(.highlightRow)
 
             // Report an Issue
             Button {

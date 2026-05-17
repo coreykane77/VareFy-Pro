@@ -45,6 +45,17 @@ struct WorkOrder: Identifiable {
     var radiusExpanded: Bool
     var pausedReturnStatus: WorkOrderStatus?
     var responseDeadline: Date?
+    var completedAt: Date?
+
+    var isChatAvailable: Bool {
+        switch status {
+        case .cancelled: return false
+        case .complete:
+            guard let completedAt else { return true }
+            return Date().timeIntervalSince(completedAt) < 72 * 3600
+        default: return true
+        }
+    }
 
     var laborTotal: Double {
         (elapsedBillingSeconds / 3600.0) * hourlyRate

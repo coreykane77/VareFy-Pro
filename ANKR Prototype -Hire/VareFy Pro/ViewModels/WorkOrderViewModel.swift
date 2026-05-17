@@ -22,6 +22,7 @@ private struct SupabaseWorkOrder: Decodable {
     let radius_expanded: Bool
     let paused_return_status: WorkOrderStatus?
     let response_deadline: String?
+    let completed_at: String?
     let billing_start_at: String?
     let elapsed_billing_seconds: Double
     let labor_total: Double
@@ -50,7 +51,8 @@ private struct SupabaseWorkOrder: Decodable {
             elapsedBillingSeconds: elapsed_billing_seconds,
             radiusExpanded: radius_expanded,
             pausedReturnStatus: paused_return_status,
-            responseDeadline: Self.parseDate(response_deadline)
+            responseDeadline: Self.parseDate(response_deadline),
+            completedAt: Self.parseDate(completed_at)
         )
     }
 
