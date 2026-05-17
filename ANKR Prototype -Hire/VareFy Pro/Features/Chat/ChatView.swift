@@ -117,7 +117,7 @@ struct ChatView: View {
     private func senderLabel(for role: SenderRole) -> some View {
         switch role {
         case .client:
-            Text("Client")
+            Text(order?.clientName ?? "Client")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
