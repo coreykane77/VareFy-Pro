@@ -27,6 +27,7 @@ struct WorkOrderDetailView: View {
                         headerSection(order)
                         detailSection(order)
                         photoHistorySection(order)
+                        estimatesSection(order)
                         actionSection(order)
                     }
                     .padding(16)
@@ -37,7 +38,9 @@ struct WorkOrderDetailView: View {
             }
         }
         .task(id: orderId) {
-            await workOrderVM.fetchPhotos(for: orderId)
+            async let photos: () = workOrderVM.fetchPhotos(for: orderId)
+            async let estimates: () = workOrderVM.fetchEstimates(for: orderId)
+            _ = await (photos, estimates)
         }
         .fullScreenCover(isPresented: $showPhotoViewer) {
             ProPhotoViewer(records: photoViewerRecords, currentIndex: photoViewerIndex)
@@ -218,6 +221,65 @@ struct WorkOrderDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func estimatesSection(_ order: WorkOrder) -> some View {
+        let estimates = workOrderVM.proEstimates[orderId] ?? []
+        if !estimates.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("ESTIMATES SENT")
+                    .font(.caption).fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+
+                ForEach(estimates) { estimate in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            if let title = estimate.title, !title.isEmpty {
+                                Text(title)
+                                    .font(.subheadline).fontWeight(.semibold)
+                            } else {
+                                Text("Estimate")
+                                    .font(.subheadline).fontWeight(.semibold)
+                            }
+                            Spacer()
+                            EstimateStatusBadge(status: estimate.status)
+                        }
+
+                        HStack(spacing: 16) {
+                            Label("\(String(format: "%.1f", estimate.estimatedHours)) hrs",
+                                  systemImage: "clock")
+                            if estimate.estimatedMaterials > 0 {
+                                Label(estimate.estimatedMaterials.formatted(.currency(code: "USD")),
+                                      systemImage: "wrench.and.screwdriver")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        HStack {
+                            Text("Total")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(estimate.estimatedTotal, format: .currency(code: "USD"))
+                                .font(.subheadline).fontWeight(.semibold)
+                        }
+
+                        HStack {
+                            Text("Proposed start")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(estimate.proposedStartDate.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.appCard)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
             }
         }
@@ -466,6 +528,39 @@ struct WorkOrderDetailView: View {
                 .foregroundStyle(.orange)
             Text("Work order data unavailable.")
                 .foregroundStyle(.primary)
+        }
+    }
+}
+
+// MARK: - Estimate Status Badge
+
+private struct EstimateStatusBadge: View {
+    let status: EstimateStatus
+
+    var body: some View {
+        Text(label)
+            .font(.caption2).fontWeight(.semibold)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(0.15))
+            .clipShape(Capsule())
+    }
+
+    private var label: String {
+        switch status {
+        case .pending:  return "Awaiting Response"
+        case .accepted: return "Accepted"
+        case .declined: return "Declined"
+        case .expired:  return "Expired"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .pending:  return Color.varefyCyan
+        case .accepted: return .green
+        case .declined: return .red
+        case .expired:  return Color(uiColor: .secondaryLabel)
         }
     }
 }

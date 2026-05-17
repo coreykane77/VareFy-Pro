@@ -67,6 +67,46 @@ private struct SupabaseWorkOrder: Decodable {
     }
 }
 
+private struct SupabaseEstimate: Decodable {
+    let id: UUID
+    let work_order_id: UUID
+    let title: String?
+    let description: String?
+    let valid_for_days: Int?
+    let estimated_hours: Double
+    let estimated_materials: Double
+    let estimated_total: Double
+    let proposed_start_date: String
+    let status: String
+    let created_at: String?
+
+    func toEstimate() -> Estimate {
+        let isoFull: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f
+        }()
+        let isoBasic = ISO8601DateFormatter()
+        func parse(_ s: String?) -> Date? {
+            guard let s else { return nil }
+            return isoFull.date(from: s) ?? isoBasic.date(from: s)
+        }
+        return Estimate(
+            id: id,
+            workOrderId: work_order_id,
+            title: title,
+            description: description,
+            validForDays: valid_for_days ?? 30,
+            estimatedHours: estimated_hours,
+            estimatedMaterials: estimated_materials,
+            estimatedTotal: estimated_total,
+            proposedStartDate: parse(proposed_start_date) ?? Date(),
+            status: EstimateStatus(rawValue: status) ?? .pending,
+            createdAt: parse(created_at)
+        )
+    }
+}
+
 // Decoded response from the transition-work-order Edge Function
 private struct TransitionResponse: Decodable {
     let success: Bool?
@@ -85,6 +125,7 @@ class WorkOrderViewModel {
     var unreadChatOrderIds: Set<UUID> = []
     var currentChatOrderId: UUID? = nil
     var sentEstimateOrderIds: Set<UUID> = []
+    var proEstimates: [UUID: [Estimate]] = [:]
     var photoUploadError: String? = nil
 
     var hasUnreadChats: Bool { !unreadChatOrderIds.isEmpty }
@@ -370,6 +411,21 @@ class WorkOrderViewModel {
                           userInfo: [NSLocalizedDescriptionKey: errMsg])
         }
         sentEstimateOrderIds.insert(orderId)
+    }
+
+    func fetchEstimates(for workOrderId: UUID) async {
+        do {
+            let rows: [SupabaseEstimate] = try await supabase
+                .from("estimates")
+                .select()
+                .eq("work_order_id", value: workOrderId.uuidString)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            proEstimates[workOrderId] = rows.map { $0.toEstimate() }
+        } catch {
+            print("WorkOrderVM: fetchEstimates failed — \(error)")
+        }
     }
 
     // MARK: - Materials
