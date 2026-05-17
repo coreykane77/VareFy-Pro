@@ -121,6 +121,16 @@ struct ZoomableImageView: UIViewRepresentable {
             coord.fit(in: sv, size: size)
         }
 
+        // TabView(.page) renders the initial page during the fullScreenCover
+        // open animation, before UIPageViewController commits layout. layoutSubviews
+        // fires at that moment with .zero bounds and never re-fires once bounds
+        // are real. One async hop lands after UIKit's first committed layout pass.
+        DispatchQueue.main.async { [weak scrollView, weak coordinator] in
+            guard let sv = scrollView, let coord = coordinator,
+                  sv.bounds.width > 0 else { return }
+            coord.fit(in: sv, size: sv.bounds.size)
+        }
+
         return scrollView
     }
 
