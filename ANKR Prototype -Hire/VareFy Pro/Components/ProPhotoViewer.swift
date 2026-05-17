@@ -153,7 +153,7 @@ private final class ZoomContainer: UIView, UIScrollViewDelegate {
     }
 }
 
-struct ZoomableImageView: UIViewRepresentable {
+private struct ZoomableImageView: UIViewRepresentable {
     let image: UIImage
 
     func makeUIView(context: Context) -> ZoomContainer {
