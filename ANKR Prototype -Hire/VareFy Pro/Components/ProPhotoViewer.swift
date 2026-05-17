@@ -78,10 +78,34 @@ private final class ZoomScrollView: UIScrollView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        fireIfReady()
+    }
+
+    // layoutSubviews may fire before UIPageViewController commits bounds for
+    // the initial TabView(.page) page. didMoveToWindow polls each run loop
+    // until bounds are non-zero, then fires onBoundsChanged exactly once.
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else { return }
+        pollBoundsUntilReady(attemptsLeft: 60)
+    }
+
+    private func fireIfReady() {
         let size = bounds.size
         guard size.width > 0, size.height > 0, size != lastBoundsSize else { return }
         lastBoundsSize = size
         onBoundsChanged?(size)
+    }
+
+    private func pollBoundsUntilReady(attemptsLeft: Int) {
+        guard window != nil, attemptsLeft > 0 else { return }
+        if bounds.width > 0 {
+            fireIfReady()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.pollBoundsUntilReady(attemptsLeft: attemptsLeft - 1)
+            }
+        }
     }
 }
 
@@ -119,16 +143,6 @@ struct ZoomableImageView: UIViewRepresentable {
         scrollView.onBoundsChanged = { [weak coordinator] size in
             guard let coord = coordinator, let sv = coord.scrollView else { return }
             coord.fit(in: sv, size: size)
-        }
-
-        // TabView(.page) renders the initial page during the fullScreenCover
-        // open animation, before UIPageViewController commits layout. layoutSubviews
-        // fires at that moment with .zero bounds and never re-fires once bounds
-        // are real. One async hop lands after UIKit's first committed layout pass.
-        DispatchQueue.main.async { [weak scrollView, weak coordinator] in
-            guard let sv = scrollView, let coord = coordinator,
-                  sv.bounds.width > 0 else { return }
-            coord.fit(in: sv, size: sv.bounds.size)
         }
 
         return scrollView
