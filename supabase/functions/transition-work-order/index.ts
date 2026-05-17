@@ -127,7 +127,8 @@ serve(async (req) => {
         .eq("work_order_id", work_order_id);
 
       const elapsed: number = order.elapsed_billing_seconds ?? 0;
-      const laborTotal = (elapsed / 3600) * (order.hourly_rate ?? 0);
+      const billableSeconds = Math.max(elapsed, 3600); // 1-hour minimum
+      const laborTotal = (billableSeconds / 3600) * (order.hourly_rate ?? 0);
       const materialsTotal = (materials ?? []).reduce(
         (sum: number, m: { amount: number }) => sum + (m.amount ?? 0),
         0
