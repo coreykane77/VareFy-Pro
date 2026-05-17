@@ -140,6 +140,7 @@ class WorkOrderViewModel {
     // Wall-clock billing anchors (server timestamp drives accuracy)
     private var billingWallClockStart: Date? = nil
     private var billingBaseSeconds: Double = 0
+    private var clientProfiles: [UUID: String] = [:]
 
     // MARK: - Supabase Fetch
 
@@ -155,12 +156,15 @@ class WorkOrderViewModel {
                 .execute()
                 .value
 
+            let clientIds = Array(Set(rows.map { $0.client_id }))
+            await fetchClientProfiles(clientIds: clientIds)
+
             // Preserve in-flight photo records and local material items across realtime refreshes.
             // toWorkOrder() initialises these as empty; without this, a realtime update wipes
             // any photos the pro just uploaded before the gate check runs.
             let existing = workOrders
             workOrders = rows.map { row in
-                var order = row.toWorkOrder()
+                var order = row.toWorkOrder(clientName: clientProfiles[row.client_id] ?? "Client")
                 if let prev = existing.first(where: { $0.id == row.id }) {
                     order.prePhotoRecords  = prev.prePhotoRecords
                     order.postPhotoRecords = prev.postPhotoRecords
@@ -178,6 +182,30 @@ class WorkOrderViewModel {
             print("WorkOrderViewModel: fetch failed — \(error)")
         }
         isLoading = false
+    }
+
+    private func fetchClientProfiles(clientIds: [UUID]) async {
+        guard !clientIds.isEmpty else { return }
+        struct ClientProfile: Decodable { let id: UUID; let display_name: String? }
+        do {
+            let profiles: [ClientProfile] = try await supabase
+                .from("profiles")
+                .select("id, display_name")
+                .in("id", values: clientIds.map { $0.uuidString })
+                .execute()
+                .value
+            for p in profiles {
+                let full = (p.display_name ?? "").trimmingCharacters(in: .whitespaces)
+                guard !full.isEmpty else { continue }
+                // Privacy: "First L." format — never expose full last name to pro
+                let parts = full.split(separator: " ")
+                let first = String(parts.first ?? Substring(full))
+                let lastInitial = parts.count > 1 ? " \(parts[1].prefix(1))." : ""
+                clientProfiles[p.id] = first + lastInitial
+            }
+        } catch {
+            print("WorkOrderViewModel: client profile fetch failed — \(error)")
+        }
     }
 
     func subscribeToWorkOrders(proId: UUID) async {
