@@ -69,7 +69,7 @@ struct LearningView: View {
         .init(icon: "star.fill",              title: "Earning and Maintaining Ratings", subtitle: "How ratings affect your visibility and job matching",      duration: "5 min", isCompleted: false),
         .init(icon: "shield.fill",            title: "Boss Plan Benefits",              subtitle: "Analytics, repeat clients, priority placement, and more", duration: "6 min", isCompleted: false),
         .init(icon: "dollarsign.circle.fill", title: "Getting Paid",                    subtitle: "Instant pay, bank transfers, fees, and payout timing",    duration: "4 min", isCompleted: false),
-        .init(icon: "person.2.fill",          title: "H2H Collaboration",              subtitle: "How to partner with other Hires on larger jobs",           duration: "5 min", isCompleted: false),
+        .init(icon: "person.2.fill",          title: "P2P Collaboration",              subtitle: "How to partner with other pros on larger jobs",            duration: "5 min", isCompleted: false),
     ]
 
     private var moduleCompletedCount: Int { modules.filter(\.isCompleted).count }

@@ -15,7 +15,7 @@ struct MenuView: View {
                     navItem("Account", route: .account)
                     navItem("My Services", route: .myServices)
                     navItem("Local Ops", badge: "7", route: .localOps)
-                    navItem("H2H",  route: .h2h)
+                    navItem("P2P",  route: .h2h)
                     navItem("Boss", route: .boss)
                     referItem
 

@@ -10,7 +10,7 @@ struct DrawerMenuView: View {
     @AppStorage("drawer_last_route") private var lastRouteKey: String = ""
 
     private let otherMenuItems: [(String, String, NavRoute)] = [
-        ("person.2.fill",          "H2H",        .placeholder("H2H")),
+        ("person.2.fill",          "P2P",        .placeholder("P2P")),
         ("briefcase.fill",         "Boss",       .boss),
         ("gift.fill",              "Refer",      .placeholder("Refer")),
     ]
