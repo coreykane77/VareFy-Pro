@@ -66,8 +66,25 @@ private struct ZoomablePhotoRecord: View {
 }
 
 // MARK: - UIScrollView zoom wrapper
-// size comes from GeometryReader — always valid before updateUIView fires,
-// regardless of fullScreenCover animation state.
+
+// Fires onBoundsChanged whenever UIKit commits a new non-zero bounds size.
+// This is the authoritative re-fit trigger: GeometryReader and UIKit layout
+// are independent, and scrollView.bounds can still be .zero when updateUIView
+// first fires (e.g. during fullScreenCover open animation). layoutSubviews
+// runs after UIKit has committed real bounds, making it the correct place to
+// re-fit the image.
+private final class ZoomScrollView: UIScrollView {
+    var onBoundsChanged: (() -> Void)?
+    private var lastBoundsSize: CGSize = .zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != lastBoundsSize else { return }
+        lastBoundsSize = bounds.size
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        onBoundsChanged?()
+    }
+}
 
 struct ZoomableImageView: UIViewRepresentable {
     let image: UIImage
@@ -76,7 +93,7 @@ struct ZoomableImageView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+        let scrollView = ZoomScrollView()
         scrollView.delegate = context.coordinator
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 4
@@ -99,6 +116,12 @@ struct ZoomableImageView: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
         context.coordinator.scrollView = scrollView
+
+        let coordinator = context.coordinator
+        scrollView.onBoundsChanged = { [weak coordinator, weak scrollView] in
+            guard let coord = coordinator, let sv = scrollView else { return }
+            coord.refitFromBounds(in: sv)
+        }
 
         return scrollView
     }
@@ -127,6 +150,16 @@ struct ZoomableImageView: UIViewRepresentable {
             fittedImage = image
             fittedSize = size
             fit(in: scrollView, size: size)
+        }
+
+        // Called by ZoomScrollView.layoutSubviews when UIKit commits real bounds.
+        // Uses scrollView.bounds.size (authoritative UIKit measurement) rather than
+        // the GeometryReader size, which may have been stale at first updateUIView.
+        func refitFromBounds(in scrollView: UIScrollView) {
+            let boundsSize = scrollView.bounds.size
+            guard boundsSize.width > 0, boundsSize.height > 0 else { return }
+            fittedSize = .zero  // invalidate so fit() runs even if image is unchanged
+            fit(in: scrollView, size: boundsSize)
         }
 
         private func fit(in scrollView: UIScrollView, size: CGSize) {
