@@ -95,45 +95,47 @@ class ChatViewModel {
     // MARK: - Channel
 
     func loadChannel(workOrderId: UUID, proId: UUID, clientId: UUID) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        // Wait up to 10s for Stream client to connect (handles auth startup race)
+        var attempts = 0
+        while ChatViewModel.client == nil && attempts < 20 {
+            try? await Task.sleep(for: .milliseconds(500))
+            attempts += 1
+        }
+
         guard let client = ChatViewModel.client else {
-            errorMessage = "Chat not connected."
+            errorMessage = "Chat not connected — please try again."
             return
         }
-        isLoading = true
 
         let channelId = ChannelId(
             type: .messaging,
             id: "work_order_\(workOrderId.uuidString.lowercased())"
         )
-        let members: Set<UserId> = [
-            proId.uuidString.lowercased(),
-            clientId.uuidString.lowercased()
-        ]
 
-        do {
-            channelController = try client.channelController(
-                createChannelWithId: channelId,
-                members: members,
-                isCurrentUserMember: true
-            )
-            channelController?.delegate = delegateProxy
+        // Query-only — channel is guaranteed by transition-work-order / create-chat-channel Edge Functions
+        channelController = client.channelController(for: channelId)
+        channelController?.delegate = delegateProxy
 
-            let syncError: Error? = await withCheckedContinuation { continuation in
-                channelController?.synchronize { error in continuation.resume(returning: error) }
-            }
-            if let syncError {
-                print("ChatViewModel: synchronize failed — \(syncError)")
-                errorMessage = "Couldn't load chat: \(syncError.localizedDescription)"
-                isLoading = false
-                return
-            }
-            messages = Array(channelController?.messages ?? [])
+        let syncError: Error? = await withCheckedContinuation { continuation in
+            channelController?.synchronize { error in continuation.resume(returning: error) }
+        }
+
+        if let syncError {
+            print("ChatViewModel: sync failed for \(channelId.id) — \(syncError)")
+            errorMessage = "Chat isn't available yet."
+            return
+        }
+
+        let loaded = Array(
+            Array(channelController?.messages ?? [])
                 .filter { $0.type == .regular }
                 .reversed()
-        } catch {
-            errorMessage = "Couldn't load chat: \(error.localizedDescription)"
-        }
-        isLoading = false
+        )
+        print("ChatViewModel: synced \(channelId.id) — \(loaded.count) messages")
+        messages = loaded
     }
 
     func send(text: String) {
