@@ -411,6 +411,7 @@ class WorkOrderViewModel {
                           userInfo: [NSLocalizedDescriptionKey: errMsg])
         }
         sentEstimateOrderIds.insert(orderId)
+        await fetchEstimates(for: orderId)
     }
 
     func fetchEstimates(for workOrderId: UUID) async {
