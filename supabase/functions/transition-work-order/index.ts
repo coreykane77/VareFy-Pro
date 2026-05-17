@@ -10,18 +10,24 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   "active_billing":     ["paused", "post_work"],
   "paused":             ["active_billing", "pre_work"],
   "post_work":          ["client_review"],
+  "client_review":      ["completed", "disputed"],  // client-only transitions
 };
+
+// Transitions that the client (not the pro) is allowed to initiate
+const CLIENT_TRANSITIONS = new Set(["client_review>completed", "client_review>disputed"]);
 
 // Timeline event written for each transition key (currentStatus>newStatus)
 const TRANSITION_EVENT: Record<string, string | null> = {
-  "pending>ready_to_navigate":   "confirmed",
-  "en_route>arrived":             "arrived",
-  "pre_work>active_billing":      "started",
-  "active_billing>paused":        "paused",
-  "active_billing>post_work":     null,
-  "paused>active_billing":        "resumed",
-  "paused>pre_work":              "resumed",
-  "post_work>client_review":      "completed",
+  "pending>ready_to_navigate":    "confirmed",
+  "en_route>arrived":              "arrived",
+  "pre_work>active_billing":       "started",
+  "active_billing>paused":         "paused",
+  "active_billing>post_work":      null,
+  "paused>active_billing":         "resumed",
+  "paused>pre_work":               "resumed",
+  "post_work>client_review":       "completed",
+  "client_review>completed":       "client_approved",
+  "client_review>disputed":        "client_disputed",
 };
 
 serve(async (req) => {
@@ -49,9 +55,17 @@ serve(async (req) => {
       .single();
 
     if (fetchErr || !order) return err("Work order not found", 404);
-    if (order.pro_id !== user.id) return err("Forbidden", 403);
 
     const currentStatus: string = order.status;
+    const transitionKey = `${currentStatus}>${new_status}`;
+    const isClientTransition = CLIENT_TRANSITIONS.has(transitionKey);
+
+    if (isClientTransition) {
+      if (order.client_id !== user.id) return err("Forbidden", 403);
+    } else {
+      if (order.pro_id !== user.id) return err("Forbidden", 403);
+    }
+
     const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
     if (!allowed.includes(new_status)) {
       return err(`Invalid transition: ${currentStatus} → ${new_status}`, 422);
@@ -162,7 +176,7 @@ serve(async (req) => {
         work_order_id,
         event_type: eventType,
         actor_id: user.id,
-        actor_role: "pro",
+        actor_role: isClientTransition ? "client" : "pro",
         occurred_at: now,
       });
     }
