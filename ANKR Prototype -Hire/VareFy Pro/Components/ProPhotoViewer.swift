@@ -39,20 +39,19 @@ private struct ZoomablePhotoRecord: View {
     @State private var isLoading = false
 
     var body: some View {
-        GeometryReader { geo in
+        ZStack {
             if let image = loadedImage ?? record.localImage {
-                ZoomableImageView(image: image, size: geo.size)
+                ZoomableImageView(image: image)
             } else if isLoading {
                 ProgressView()
                     .tint(.white)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
             } else {
                 Image(systemName: "photo")
                     .font(.largeTitle)
                     .foregroundStyle(.gray)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             guard record.localImage == nil, loadedImage == nil, let url = record.signedURL else { return }
             isLoading = true
@@ -66,29 +65,28 @@ private struct ZoomablePhotoRecord: View {
 }
 
 // MARK: - UIScrollView zoom wrapper
+//
+// ZoomScrollView.layoutSubviews is the sole trigger for initial fitting.
+// It fires after UIKit commits real bounds — later than updateUIView, which
+// can fire while scrollView.bounds is still .zero during fullScreenCover
+// animation. Passing bounds.size directly from layoutSubviews eliminates
+// the GeometryReader / UIKit bounds race that caused the black-screen bug.
 
-// Fires onBoundsChanged whenever UIKit commits a new non-zero bounds size.
-// This is the authoritative re-fit trigger: GeometryReader and UIKit layout
-// are independent, and scrollView.bounds can still be .zero when updateUIView
-// first fires (e.g. during fullScreenCover open animation). layoutSubviews
-// runs after UIKit has committed real bounds, making it the correct place to
-// re-fit the image.
 private final class ZoomScrollView: UIScrollView {
-    var onBoundsChanged: (() -> Void)?
+    var onBoundsChanged: ((CGSize) -> Void)?
     private var lastBoundsSize: CGSize = .zero
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.size != lastBoundsSize else { return }
-        lastBoundsSize = bounds.size
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        onBoundsChanged?()
+        let size = bounds.size
+        guard size.width > 0, size.height > 0, size != lastBoundsSize else { return }
+        lastBoundsSize = size
+        onBoundsChanged?(size)
     }
 }
 
 struct ZoomableImageView: UIViewRepresentable {
     let image: UIImage
-    let size: CGSize
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -118,9 +116,9 @@ struct ZoomableImageView: UIViewRepresentable {
         context.coordinator.scrollView = scrollView
 
         let coordinator = context.coordinator
-        scrollView.onBoundsChanged = { [weak coordinator, weak scrollView] in
-            guard let coord = coordinator, let sv = scrollView else { return }
-            coord.refitFromBounds(in: sv)
+        scrollView.onBoundsChanged = { [weak coordinator] size in
+            guard let coord = coordinator, let sv = coord.scrollView else { return }
+            coord.fit(in: sv, size: size)
         }
 
         return scrollView
@@ -128,15 +126,17 @@ struct ZoomableImageView: UIViewRepresentable {
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
         guard let imageView = context.coordinator.imageView else { return }
+        guard imageView.image !== image else { return }
         imageView.image = image
-        context.coordinator.fitIfNeeded(in: scrollView, image: image, size: size)
+        let size = scrollView.bounds.size
+        if size.width > 0 {
+            context.coordinator.fit(in: scrollView, size: size)
+        }
     }
 
     class Coordinator: NSObject, UIScrollViewDelegate {
         weak var scrollView: UIScrollView?
         weak var imageView: UIImageView?
-        private var fittedImage: UIImage?
-        private var fittedSize: CGSize = .zero
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
@@ -144,33 +144,17 @@ struct ZoomableImageView: UIViewRepresentable {
             centerContent(in: scrollView)
         }
 
-        func fitIfNeeded(in scrollView: UIScrollView, image: UIImage, size: CGSize) {
-            guard size.width > 0, size.height > 0 else { return }
-            guard image !== fittedImage || size != fittedSize else { return }
-            fittedImage = image
-            fittedSize = size
-            fit(in: scrollView, size: size)
-        }
-
-        // Called by ZoomScrollView.layoutSubviews when UIKit commits real bounds.
-        // Uses scrollView.bounds.size (authoritative UIKit measurement) rather than
-        // the GeometryReader size, which may have been stale at first updateUIView.
-        func refitFromBounds(in scrollView: UIScrollView) {
-            let boundsSize = scrollView.bounds.size
-            guard boundsSize.width > 0, boundsSize.height > 0 else { return }
-            fittedSize = .zero  // invalidate so fit() runs even if image is unchanged
-            fit(in: scrollView, size: boundsSize)
-        }
-
-        private func fit(in scrollView: UIScrollView, size: CGSize) {
+        func fit(in scrollView: UIScrollView, size: CGSize) {
             guard let imageView, let img = imageView.image,
-                  img.size.width > 0, img.size.height > 0 else { return }
+                  img.size.width > 0, img.size.height > 0,
+                  size.width > 0, size.height > 0 else { return }
             let scale = min(size.width / img.size.width, size.height / img.size.height)
-            imageView.frame = CGRect(origin: .zero, size: CGSize(
+            let fitSize = CGSize(
                 width:  img.size.width  * scale,
                 height: img.size.height * scale
-            ))
-            scrollView.contentSize = imageView.frame.size
+            )
+            imageView.frame = CGRect(origin: .zero, size: fitSize)
+            scrollView.contentSize = fitSize
             scrollView.zoomScale = 1
             centerContent(in: scrollView)
         }
