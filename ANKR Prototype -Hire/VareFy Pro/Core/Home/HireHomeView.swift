@@ -1,4 +1,5 @@
 import SwiftUI
+import StreamChat
 
 enum AppTab {
     case home, workOrders, wallet, inbox, menu
