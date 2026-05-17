@@ -557,7 +557,7 @@ private struct EstimateStatusBadge: View {
 
     private var color: Color {
         switch status {
-        case .pending:  return Color.varefyCyan
+        case .pending:  return Color.varefyProCyan
         case .accepted: return .green
         case .declined: return .red
         case .expired:  return Color(uiColor: .secondaryLabel)
