@@ -60,7 +60,7 @@ struct MessagesListView: View {
             items.append(.init(
                 type: .client(orderId: order.id),
                 sender: order.clientName,
-                subject: order.serviceTitle,
+                subject: "\(order.serviceTitle) · \(order.status.displayName)",
                 preview: preview,
                 time: time,
                 isUnread: isUnread,
