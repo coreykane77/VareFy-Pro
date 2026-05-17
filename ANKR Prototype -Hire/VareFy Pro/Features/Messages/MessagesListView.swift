@@ -180,20 +180,21 @@ struct MessagesListView: View {
 
     private func loadChannelStates() async {
         guard let client = ChatViewModel.client else { return }
+        var controllers: [ChatChannelController] = []
         for order in workOrderVM.workOrders {
             let channelId = ChannelId(type: .messaging, id: "work_order_\(order.id.uuidString.lowercased())")
             guard let controller = try? client.channelController(for: channelId) else { continue }
+            controllers.append(controller)
             let _: Error? = await withCheckedContinuation { cont in
                 controller.synchronize { cont.resume(returning: $0) }
             }
             let unread = (controller.channel?.unreadCount.messages ?? 0) > 0
             let lastMsg = Array(controller.messages).filter { $0.type == .regular }.first
-            let state = ChannelState(
+            channelStates[order.id] = ChannelState(
                 unread: unread,
                 preview: lastMsg?.text ?? "",
                 time: lastMsg?.createdAt ?? order.scheduledTime
             )
-            channelStates[order.id] = state
             if unread { workOrderVM.markChatUnread(for: order.id) }
         }
     }

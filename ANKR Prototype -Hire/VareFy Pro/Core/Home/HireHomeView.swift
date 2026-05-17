@@ -99,6 +99,20 @@ struct HireHomeView: View {
             guard let proId = authManager.currentUserId else { return }
             await workOrderVM.fetchWorkOrders(proId: proId)
             await workOrderVM.subscribeToWorkOrders(proId: proId)
+            ChatViewModel.startInboxObserver { channels in
+                Task { @MainActor in
+                    for channel in channels {
+                        let cid = channel.cid.id
+                        guard cid.hasPrefix("work_order_"),
+                              let workOrderId = UUID(uuidString: String(cid.dropFirst("work_order_".count))) else { continue }
+                        if channel.unreadCount.messages > 0 {
+                            workOrderVM.markChatUnread(for: workOrderId)
+                        } else {
+                            workOrderVM.unreadChatOrderIds.remove(workOrderId)
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -50,6 +50,29 @@ class ChatViewModel {
     static func disconnect() async {
         await client?.disconnect()
         client = nil
+        channelListController = nil
+        inboxDelegate = nil
+    }
+
+    // MARK: - Inbox real-time observer
+
+    private static var channelListController: ChatChannelListController?
+    private static var inboxDelegate: InboxDelegateProxy?
+
+    static func startInboxObserver(onChannelUpdate: @escaping ([ChatChannel]) -> Void) {
+        guard let client, let userId = client.currentUserId else { return }
+        let filter = Filter<ChannelListFilterScope>.containMembers(userIds: [userId])
+        let query = ChannelListQuery(
+            filter: filter,
+            sort: [.init(key: .lastMessageAt, isAscending: false)],
+            pageSize: 50
+        )
+        guard let controller = try? client.channelListController(query: query) else { return }
+        let delegate = InboxDelegateProxy(onUpdate: onChannelUpdate)
+        inboxDelegate = delegate
+        controller.delegate = delegate
+        channelListController = controller
+        controller.synchronize { _ in }
     }
 
     // Returns true if the currently connected user has sent at least one message
@@ -135,6 +158,17 @@ class ChatViewModel {
 }
 
 // MARK: - Delegate proxy (bridges Stream delegate → @Observable)
+
+private class InboxDelegateProxy: NSObject, ChatChannelListControllerDelegate {
+    let onUpdate: ([ChatChannel]) -> Void
+    init(onUpdate: @escaping ([ChatChannel]) -> Void) {
+        self.onUpdate = onUpdate
+        super.init()
+    }
+    func controller(_ controller: ChatChannelListController, didChangeChannels changes: [ListChange<ChatChannel>]) {
+        onUpdate(Array(controller.channels))
+    }
+}
 
 private class DelegateProxy: NSObject, ChatChannelControllerDelegate {
     weak var owner: ChatViewModel?
