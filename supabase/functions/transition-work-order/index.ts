@@ -1,6 +1,60 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// --- Stream server-side helpers ---
+
+function base64url(input: string | ArrayBuffer): string {
+  const bytes = typeof input === "string"
+    ? new TextEncoder().encode(input)
+    : new Uint8Array(input as ArrayBuffer);
+  const str = btoa(String.fromCharCode(...bytes));
+  return str.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function streamServerJwt(secret: string): Promise<string> {
+  const header  = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = base64url(JSON.stringify({ server: true }));
+  const input   = `${header}.${payload}`;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input));
+  return `${input}.${base64url(sig)}`;
+}
+
+async function ensureStreamChannel(proId: string, clientId: string, workOrderId: string): Promise<void> {
+  const apiKey    = Deno.env.get("STREAM_API_KEY") ?? "ceexz838897y";
+  const apiSecret = Deno.env.get("STREAM_API_SECRET");
+  if (!apiSecret) {
+    console.error("STREAM_API_SECRET not configured — skipping Stream channel creation");
+    return;
+  }
+  const channelId = `work_order_${workOrderId.toLowerCase()}`;
+  const token     = await streamServerJwt(apiSecret);
+  const res = await fetch(
+    `https://chat.stream-io-api.com/channels/messaging/${channelId}?api_key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "stream-auth-type": "jwt",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        data:    { created_by_id: proId },
+        members: [{ user_id: proId }, { user_id: clientId }],
+      }),
+    }
+  );
+  if (!res.ok) {
+    console.error(`Stream channel creation failed (${res.status}): ${await res.text()}`);
+  }
+}
+
 // Valid state machine transitions — mirrors WorkOrderStatus state machine exactly
 const VALID_TRANSITIONS: Record<string, string[]> = {
   "pending":            ["ready_to_navigate"],
@@ -181,6 +235,11 @@ serve(async (req) => {
         actor_role: isClientTransition ? "client" : "pro",
         occurred_at: now,
       });
+    }
+
+    // Create the Stream chat channel when Pro accepts the job
+    if (new_status === "ready_to_navigate") {
+      await ensureStreamChannel(order.pro_id, order.client_id, work_order_id);
     }
 
     return ok(updated);
