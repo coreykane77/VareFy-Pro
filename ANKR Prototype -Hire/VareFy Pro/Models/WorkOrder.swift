@@ -50,7 +50,7 @@ struct WorkOrder: Identifiable {
     var isChatAvailable: Bool {
         switch status {
         case .cancelled: return false
-        case .complete:
+        case .completed:
             guard let completedAt else { return true }
             return Date().timeIntervalSince(completedAt) < 72 * 3600
         default: return true
